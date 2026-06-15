@@ -651,53 +651,101 @@ class SpisanTab(tk.Frame):
 
     def _load_excel(self):
         path = filedialog.askopenfilename(
-            title='Открыть Excel шаблон списания',
+            title='Открыть Excel шаблон списания (shablon_spisan.xlsx)',
             filetypes=[('Excel файлы', '*.xlsx *.xls')])
         if not path:
             return
         try:
-            data = excel_handler.read_spisan_excel(path)
-            self.org_form.set_data(data)
-            self.items_table.load_items(data.get('items', []))
-            self._log_msg(f'✅ Загружено из Excel: {os.path.basename(path)} '
-                          f'({len(data.get("items", []))} строк)')
-            self._status.set(f'Загружено: {os.path.basename(path)}')
+            # read_spisan_excel возвращает список групп по инвентарному номеру
+            groups = excel_handler.read_spisan_excel(path)
+            self._loaded_groups = groups   # сохраняем для генерации
+
+            if groups:
+                # Показываем данные первой группы в форме
+                first = groups[0]
+                self.org_form.set_data(first)
+                # В таблице показываем все компоненты всех устройств
+                flat_items = []
+                for g in groups:
+                    for dev in g.get('devices', []):
+                        for p in dev.get('parts', []):
+                            flat_items.append({
+                                'num':           '',
+                                'name':          dev['name'],
+                                'inv_number':    g['inv_number'],
+                                'year':          '',
+                                'initial_cost':  '',
+                                'residual_cost': '',
+                                'reason':        p.get('defect', ''),
+                                'note':          p.get('condition', ''),
+                            })
+                self.items_table.load_items(flat_items)
+
+            total_devs = sum(len(g.get('devices', [])) for g in groups)
+            self._log_msg(
+                f'✅ Загружено из Excel: {os.path.basename(path)} — '
+                f'{len(groups)} инв. номеров, {total_devs} устройств'
+            )
+            self._status.set(f'Загружено: {os.path.basename(path)} ({len(groups)} групп)')
         except Exception as e:
             self._log_msg(f'❌ Ошибка загрузки: {e}')
             messagebox.showerror('Ошибка загрузки', str(e))
 
     def _generate(self):
-        org = self.org_form.get_data()
-        items = self.items_table.get_items()
-
-        if not org['org_name']:
-            messagebox.showwarning('Предупреждение', 'Укажите название организации')
-            return
-        if not items:
-            messagebox.showwarning('Предупреждение', 'Добавьте хотя бы одну строку оборудования')
-            return
-
         out_dir = self._out_dir.get() or '.'
-        mode = self._save_mode.get()
+        mode    = self._save_mode.get()
 
-        data = {**org, 'items': items}
+        # Если данные загружены из Excel — используем их
+        groups = getattr(self, '_loaded_groups', None)
+
+        if not groups:
+            # Если нет загруженных групп — берём из формы вручную
+            org   = self.org_form.get_data()
+            items = self.items_table.get_items()
+            if not org['org_name']:
+                messagebox.showwarning('Предупреждение', 'Укажите название организации')
+                return
+            if not items:
+                messagebox.showwarning('Предупреждение', 'Добавьте хотя бы одну строку оборудования')
+                return
+            # Группируем по inv_number
+            inv_map = {}
+            inv_order = []
+            for item in items:
+                inv = item.get('inv_number', 'N/A') or 'N/A'
+                if inv not in inv_map:
+                    inv_map[inv] = {'name': item.get('name',''), 'parts': []}
+                    inv_order.append(inv)
+                inv_map[inv]['parts'].append({
+                    'part_name': item.get('name', ''),
+                    'condition': item.get('note', ''),
+                    'defect':    item.get('reason', ''),
+                })
+            groups = []
+            for inv in inv_order:
+                groups.append({
+                    **org,
+                    'inv_number': inv,
+                    'devices': [{'name': inv_map[inv]['name'],
+                                 'parts': inv_map[inv]['parts']}],
+                })
 
         def do_gen():
             try:
-                self._status.set('Генерация акта списания...')
+                self._status.set('Генерация актов списания...')
                 if mode == 'single':
-                    paths = generator_spisan.save_single_files([data], out_dir)
+                    paths = generator_spisan.save_single_files(groups, out_dir)
                     for p in paths:
-                        self._log_msg(f'✅ Создан файл: {os.path.basename(p)}')
-                    msg = f'Создан файл:\n{chr(10).join(paths)}'
+                        self._log_msg(f'✅ Создан: {os.path.basename(p)}')
+                    msg = f'Создано файлов: {len(paths)}\nПапка: {out_dir}'
                 else:
-                    fname = f'Akty_Spisaniya_vse_{datetime.now().strftime("%Y%m%d_%H%M%S")}.docx'
+                    fname    = f'Texnik_Xulosa_vse_{datetime.now().strftime("%Y%m%d_%H%M%S")}.docx'
                     out_path = os.path.join(out_dir, fname)
-                    generator_spisan.save_all_in_one([data], out_path)
+                    generator_spisan.save_all_in_one(groups, out_path)
                     self._log_msg(f'✅ Создан общий файл: {fname}')
                     msg = f'Создан файл:\n{out_path}'
 
-                self._status.set('Готово ✓')
+                self._status.set(f'Готово ✓  ({len(groups)} актов)')
                 messagebox.showinfo('Готово', msg)
             except Exception as e:
                 self._log_msg(f'❌ Ошибка генерации: {e}')
@@ -844,37 +892,50 @@ class UstTab(tk.Frame):
 
     def _load_excel(self):
         path = filedialog.askopenfilename(
-            title='Открыть Excel шаблон установки',
+            title='Открыть Excel шаблон установки (shablom_ust.xlsx)',
             filetypes=[('Excel файлы', '*.xlsx *.xls')])
         if not path:
             return
         try:
             data = excel_handler.read_ust_excel(path)
+            self._loaded_data = data   # сохраняем для генерации
             self.org_form.set_data(data)
-            self.location.set(data.get('location', ''))
+            self.location.set(data.get('location', data.get('address', '')))
             self.items_table.load_items(data.get('items', []))
-            self._log_msg(f'✅ Загружено из Excel: {os.path.basename(path)} '
-                          f'({len(data.get("items", []))} строк)')
+            self._log_msg(
+                f'✅ Загружено из Excel: {os.path.basename(path)} '
+                f'({len(data.get("items", []))} строк)'
+            )
             self._status.set(f'Загружено: {os.path.basename(path)}')
         except Exception as e:
             self._log_msg(f'❌ Ошибка загрузки: {e}')
             messagebox.showerror('Ошибка загрузки', str(e))
 
     def _generate(self):
-        org = self.org_form.get_data()
-        items = self.items_table.get_items()
-
-        if not org['org_name']:
-            messagebox.showwarning('Предупреждение', 'Укажите название организации')
-            return
-        if not items:
-            messagebox.showwarning('Предупреждение', 'Добавьте хотя бы одну строку оборудования')
-            return
-
         out_dir = self._out_dir.get() or '.'
-        mode = self._save_mode.get()
+        mode    = self._save_mode.get()
 
-        data = {**org, 'location': self.location.get(), 'items': items}
+        # Предпочитаем данные загруженные из Excel
+        loaded = getattr(self, '_loaded_data', None)
+        if loaded:
+            data = loaded
+        else:
+            org   = self.org_form.get_data()
+            items = self.items_table.get_items()
+            if not org['org_name']:
+                messagebox.showwarning('Предупреждение', 'Укажите название организации')
+                return
+            if not items:
+                messagebox.showwarning('Предупреждение', 'Добавьте хотя бы одну строку оборудования')
+                return
+            data = {
+                **org,
+                'address':       self.location.get(),
+                'location':      self.location.get(),
+                'member1_title': 'Yetakchi muhandis',
+                'member2_title': 'Yetakchi muhandis',
+                'items':         items,
+            }
 
         def do_gen():
             try:
@@ -882,10 +943,10 @@ class UstTab(tk.Frame):
                 if mode == 'single':
                     paths = generator_ust.save_single_files([data], out_dir)
                     for p in paths:
-                        self._log_msg(f'✅ Создан файл: {os.path.basename(p)}')
+                        self._log_msg(f'✅ Создан: {os.path.basename(p)}')
                     msg = f'Создан файл:\n{chr(10).join(paths)}'
                 else:
-                    fname = f'Akty_Ustanovki_vse_{datetime.now().strftime("%Y%m%d_%H%M%S")}.docx'
+                    fname    = f'Dalolatnoma_vse_{datetime.now().strftime("%Y%m%d_%H%M%S")}.docx'
                     out_path = os.path.join(out_dir, fname)
                     generator_ust.save_all_in_one([data], out_path)
                     self._log_msg(f'✅ Создан общий файл: {fname}')
@@ -1054,11 +1115,13 @@ class BatchTab(tk.Frame):
             for path in self._files:
                 try:
                     if doc_type == 'spisan':
-                        data = excel_handler.read_spisan_excel(path)
+                        groups = excel_handler.read_spisan_excel(path)
+                        data_list.extend(groups)
+                        self._log_msg(f'📂 {os.path.basename(path)}: {len(groups)} инв. номеров')
                     else:
                         data = excel_handler.read_ust_excel(path)
-                    data_list.append(data)
-                    self._log_msg(f'📂 Прочитан: {os.path.basename(path)}')
+                        data_list.append(data)
+                        self._log_msg(f'📂 {os.path.basename(path)}: {len(data.get("items", []))} строк')
                 except Exception as e:
                     self._log_msg(f'❌ Ошибка чтения {os.path.basename(path)}: {e}')
 
@@ -1076,9 +1139,9 @@ class BatchTab(tk.Frame):
                     for p in paths:
                         self._log_msg(f'✅ Создан: {os.path.basename(p)}')
                 else:
-                    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    label = 'Spisaniya' if doc_type == 'spisan' else 'Ustanovki'
-                    fname = f'Akty_{label}_vse_{ts}.docx'
+                    ts    = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    label = 'Xulosa' if doc_type == 'spisan' else 'Dalolatnoma'
+                    fname = f'{label}_vse_{ts}.docx'
                     out_path = os.path.join(out_dir, fname)
                     if doc_type == 'spisan':
                         generator_spisan.save_all_in_one(data_list, out_path)
