@@ -263,69 +263,60 @@ def read_ust_excel(path: str) -> dict:
     """
     Читает shablom_ust.xlsx.
 
-    Возвращает один dict, совместимый с
-    generator_ust.create_ust_doc().
+    ТОЧНАЯ структура колонок (по реальному файлу):
+      A(0)=Data,  B(1)={num_otch},  C(2)=installation date (пусто в данных),
+      D(3)={oborud name},  E(4)={serial num}(пусто),  F(5)=пусто,
+      G(6)={where oborud},  H(7)={Organizasiya},  I(8)={adress}(пусто),
+      J(9)={boss name},  K(10)={engine1},  L(11)={job title1},
+      M(12)={engine2},  N(13)={job title2}
 
-    {
-        'org_name':        str,
-        'region':          str,
-        'address':         str,
-        'doc_number':      str,
-        'doc_date':        str,
-        'commission_head': str,
-        'member1':         str,
-        'member1_title':   str,
-        'member2':         str,
-        'member2_title':   str,
-        'items': [
-            {
-                'num':           str,
-                'name':          str,
-                'serial_number': str,
-                'inv_number':    str,
-                'install_date':  str,
-                'location':      str,
-                'model':         str,
-                'cost':          str,
-                'condition':     str,
-                'note':          str,
-            }
-        ]
-    }
+    Строка 1 — заголовки (пропускаем).
+    Строки 2+ — данные.
+    A содержит числовую дату Excel (46058 = 05.02.2026 — дата установки).
     """
     rows = _read_xlsx_rows(path)
     if not rows:
         raise ValueError(f'Файл пуст или не читается: {path}')
 
-    org_name  = ''
-    address   = ''
-    boss      = ''
-    eng1      = ''
-    job1      = ''
-    eng2      = ''
-    job2      = ''
-    doc_date  = datetime.now().strftime('%d.%m.%Y')
-    items     = []
+    org_name = ''
+    address  = ''
+    boss     = ''
+    eng1     = ''
+    job1     = ''
+    eng2     = ''
+    job2     = ''
+    items    = []
 
-    for row in rows[1:]:        # с 1-го индекса = 2-я строка Excel
+    for row in rows[1:]:        # пропускаем строку 1 (заголовки)
         if not row or not any(row):
             continue
 
-        raw_date  = _s(row, 0)
-        num       = _s(row, 1)
-        oborud    = _s(row, 2)
-        serial    = _s(row, 3)
-        inv       = _s(row, 4)
-        where     = _s(row, 5)
-        org       = _s(row, 6)
-        addr      = _s(row, 7)
-        bss       = _s(row, 8)
-        e1        = _s(row, 9)
-        j1        = _s(row, 10)
-        e2        = _s(row, 11)
-        j2        = _s(row, 12)
+        # Точный маппинг колонок по реальному файлу
+        raw_date     = _s(row,  0)   # A: Data (числовая дата Excel)
+        num          = _s(row,  1)   # B: {num_otch}
+        # C(2) = installation date — обычно пусто в данных
+        oborud       = _s(row,  3)   # D: {oborud name}
+        serial       = _s(row,  4)   # E: {serial num}
+        # F(5) = пусто
+        where        = _s(row,  6)   # G: {where oborud}
+        org          = _s(row,  7)   # H: {Organizasiya}
+        addr         = _s(row,  8)   # I: {adress}
+        bss          = _s(row,  9)   # J: {boss name}
+        e1           = _s(row, 10)   # K: {engine1}
+        j1           = _s(row, 11)   # L: {job title1}
+        e2           = _s(row, 12)   # M: {engine2}
+        j2           = _s(row, 13)   # N: {job title2}
 
-        # Общие поля берём из первой строки с данными
+        # Дата установки из колонки A (Excel serial → дд.мм.гггг)
+        if raw_date:
+            if raw_date.replace('.', '').isdigit() and '.' not in raw_date:
+                install_date = _excel_date(raw_date)
+            else:
+                install_date = raw_date
+        else:
+            install_date = datetime.now().strftime('%d.%m.%Y')
+
+        # Общие поля — берём из первой заполненной строки
         if not org_name and org:
             org_name = org
         if not address and addr:
@@ -339,13 +330,6 @@ def read_ust_excel(path: str) -> dict:
             eng2 = e2
             job2 = j2
 
-        # Дата
-        if raw_date and doc_date == datetime.now().strftime('%d.%m.%Y'):
-            if '.' not in raw_date and raw_date.replace('.','').isdigit():
-                doc_date = _excel_date(raw_date)
-            else:
-                doc_date = raw_date
-
         if not oborud:
             continue
 
@@ -354,20 +338,23 @@ def read_ust_excel(path: str) -> dict:
             'name':          oborud,
             'model':         oborud,
             'serial_number': serial,
-            'inv_number':    inv,
-            'install_date':  doc_date,
+            'inv_number':    '',
+            'install_date':  install_date,
             'location':      where,
             'cost':          '',
             'condition':     'Yangi',
             'note':          where,
         })
 
+    # Дата документа = дата из первой строки данных
+    first_date = items[0]['install_date'] if items else datetime.now().strftime('%d.%m.%Y')
+
     return {
         'org_name':        org_name,
         'region':          org_name,
         'address':         address,
         'doc_number':      '1',
-        'doc_date':        doc_date,
+        'doc_date':        first_date,
         'commission_head': boss,
         'member1':         eng1,
         'member1_title':   job1 or 'Yetakchi muhandis',
