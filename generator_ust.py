@@ -372,19 +372,37 @@ def create_ust_doc(data: dict, doc_number: str = '1') -> Document:
 
 def save_single_files(data_list: list, output_dir: str) -> list:
     """
-    Один .docx файл на каждый акт установки.
-    Имя файла: Dalolatnoma_{num_otch}_{org}.docx
+    Один .docx файл на каждую строку оборудования (каждый item).
+    Имя файла: Dalolatnoma_{num}_{oborud_name}.docx
     """
     os.makedirs(output_dir, exist_ok=True)
     created = []
-    for i, data in enumerate(data_list, start=1):
-        num  = data.get('doc_number', str(i)).replace('/', '-')
-        org  = data.get('org_name', '')[:20].replace(' ', '_').replace('/', '-')
-        doc  = create_ust_doc(data, doc_number=str(i))
-        name = f'Dalolatnoma_{num}_{org}.docx' if org else f'Dalolatnoma_{num}.docx'
-        path = os.path.join(output_dir, name)
-        doc.save(path)
-        created.append(path)
+
+    for data in data_list:
+        items = data.get('items', [])
+        # Если items пустой — один файл на весь data
+        if not items:
+            doc  = create_ust_doc(data, doc_number='1')
+            name = f"Dalolatnoma_1.docx"
+            path = os.path.join(output_dir, name)
+            doc.save(path)
+            created.append(path)
+            continue
+
+        # Каждый item = отдельный файл
+        for item in items:
+            single_data = {**data, 'items': [item]}
+            num  = str(item.get('num', '')).strip()
+            name_raw = item.get('name', item.get('model', '')).strip()
+            # Убираем недопустимые символы для имени файла
+            safe_name = ''.join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in name_raw)
+            safe_name = safe_name.strip()[:40]
+            fname = f"Dalolatnoma_{num}_{safe_name}.docx" if safe_name else f"Dalolatnoma_{num}.docx"
+            path  = os.path.join(output_dir, fname)
+            doc   = create_ust_doc(single_data, doc_number=num or str(len(created)+1))
+            doc.save(path)
+            created.append(path)
+
     return created
 
 

@@ -944,7 +944,7 @@ class UstTab(tk.Frame):
                     paths = generator_ust.save_single_files([data], out_dir)
                     for p in paths:
                         self._log_msg(f'✅ Создан: {os.path.basename(p)}')
-                    msg = f'Создан файл:\n{chr(10).join(paths)}'
+                    msg = f'Создано файлов: {len(paths)}\nПапка: {out_dir}'
                 else:
                     fname    = f'Dalolatnoma_vse_{datetime.now().strftime("%Y%m%d_%H%M%S")}.docx'
                     out_path = os.path.join(out_dir, fname)
@@ -952,7 +952,7 @@ class UstTab(tk.Frame):
                     self._log_msg(f'✅ Создан общий файл: {fname}')
                     msg = f'Создан файл:\n{out_path}'
 
-                self._status.set('Готово ✓')
+                self._status.set(f'Готово ✓')
                 messagebox.showinfo('Готово', msg)
             except Exception as e:
                 self._log_msg(f'❌ Ошибка генерации: {e}')
