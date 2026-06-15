@@ -64,56 +64,55 @@ WINDOW_H = 760
 #  ВСПОМОГАТЕЛЬНЫЕ ВИДЖЕТЫ
 # ══════════════════════════════════════════════════════
 
-class RoundedButton(tk.Canvas):
-    """Кнопка с закруглёнными углами."""
+class RoundedButton(tk.Button):
+    """Стилизованная кнопка (совместима со всеми версиями Tkinter/Windows)."""
 
     def __init__(self, parent, text='', command=None, bg='#1A5276',
                  fg='#FFFFFF', width=160, height=36, radius=8,
                  font=FONT_BTN, **kwargs):
-        super().__init__(parent, width=width, height=height,
-                         bg=parent['bg'] if hasattr(parent, '__getitem__') else '#F5F7FA',
-                         highlightthickness=0, **kwargs)
+        # Вычисляем примерную ширину в символах из пикселей
+        char_width = max(8, width // 8)
+
+        def _get_parent_bg(p):
+            try:
+                return p['bg']
+            except Exception:
+                return '#F5F7FA'
+
+        super().__init__(
+            parent,
+            text=text,
+            command=command,
+            bg=bg,
+            fg=fg,
+            font=font,
+            relief='flat',
+            bd=0,
+            cursor='hand2',
+            activebackground=self._darken(bg),
+            activeforeground=fg,
+            padx=8,
+            pady=4,
+        )
         self._bg = bg
         self._hover_bg = self._darken(bg)
-        self._fg = fg
-        self._text = text
-        self._command = command
-        self._radius = radius
-        self._w = width
-        self._h = height
-        self._font = font
-        self._draw(self._bg)
-        self.bind('<Enter>', lambda e: self._draw(self._hover_bg))
-        self.bind('<Leave>', lambda e: self._draw(self._bg))
-        self.bind('<Button-1>', lambda e: self._click())
 
-    def _darken(self, hex_color):
-        r = int(hex_color[1:3], 16)
-        g = int(hex_color[3:5], 16)
-        b = int(hex_color[5:7], 16)
-        factor = 0.82
-        return f'#{int(r*factor):02x}{int(g*factor):02x}{int(b*factor):02x}'
+        self.bind('<Enter>', lambda e: self.config(bg=self._hover_bg))
+        self.bind('<Leave>', lambda e: self.config(bg=self._bg))
 
-    def _draw(self, color):
-        self.delete('all')
-        r = self._radius
-        w, h = self._w, self._h
-        self.create_arc(0, 0, 2*r, 2*r, start=90, extent=90, fill=color, outline=color)
-        self.create_arc(w-2*r, 0, w, 2*r, start=0, extent=90, fill=color, outline=color)
-        self.create_arc(0, h-2*r, 2*r, h, start=180, extent=90, fill=color, outline=color)
-        self.create_arc(w-2*r, h-2*r, w, h, start=270, extent=90, fill=color, outline=color)
-        self.create_rectangle(r, 0, w-r, h, fill=color, outline=color)
-        self.create_rectangle(0, r, w, h-r, fill=color, outline=color)
-        self.create_text(w//2, h//2, text=self._text, fill=self._fg,
-                         font=self._font)
-
-    def _click(self):
-        if self._command:
-            self._command()
+    @staticmethod
+    def _darken(hex_color):
+        try:
+            r = int(hex_color[1:3], 16)
+            g = int(hex_color[3:5], 16)
+            b = int(hex_color[5:7], 16)
+            factor = 0.82
+            return f'#{int(r*factor):02x}{int(g*factor):02x}{int(b*factor):02x}'
+        except Exception:
+            return hex_color
 
     def config_text(self, text):
-        self._text = text
-        self._draw(self._bg)
+        self.config(text=text)
 
 
 class LabeledEntry(tk.Frame):
