@@ -264,71 +264,85 @@ def read_ust_excel(path: str) -> dict:
     Читает shablom_ust.xlsx.
 
     ТОЧНАЯ структура колонок (по реальному файлу):
-      A(0)=Data,  B(1)={num_otch},  C(2)=installation date (пусто в данных),
-      D(3)={oborud name},  E(4)={serial num}(пусто),  F(5)=пусто,
-      G(6)={where oborud},  H(7)={Organizasiya},  I(8)={adress}(пусто),
-      J(9)={boss name},  K(10)={engine1},  L(11)={job title1},
-      M(12)={engine2},  N(13)={job title2}
-
-    Строка 1 — заголовки (пропускаем).
-    Строки 2+ — данные.
-    A содержит числовую дату Excel (46058 = 05.02.2026 — дата установки).
+      A(0)  = Data              — дата документа (акта)
+      B(1)  = {num_otch}        — порядковый номер строки
+      C(2)  = installation date — дата установки оборудования (отдельная для каждой строки)
+      D(3)  = {oborud name}     — наименование/модель оборудования
+      E(4)  = {serial num}      — серийный номер
+      F(5)  = {where oborud}    — место установки
+      G(6)  = {Organizasiya}    — организация
+      H(7)  = {adress}          — адрес
+      I(8)  = пусто
+      J(9)  = {boss name}       — руководитель
+      K(10) = {engine1}         — инженер 1
+      L(11) = {job title1}      — должность инженера 1
+      M(12) = {engine2}         — инженер 2
+      N(13) = {job title2}      — должность инженера 2
     """
     rows = _read_xlsx_rows(path)
     if not rows:
         raise ValueError(f'Файл пуст или не читается: {path}')
 
-    org_name = ''
-    address  = ''
-    boss     = ''
-    eng1     = ''
-    job1     = ''
-    eng2     = ''
-    job2     = ''
-    items    = []
+    org_name  = ''
+    address   = ''
+    boss      = ''
+    eng1      = ''
+    job1      = ''
+    eng2      = ''
+    job2      = ''
+    doc_date  = ''   # дата акта — из колонки A первой строки данных
+    items     = []
+
+    def _to_date(val: str) -> str:
+        """Конвертирует Excel serial number или строку в дд.мм.гггг."""
+        if not val:
+            return ''
+        val = val.strip()
+        # Уже в формате дд.мм.гггг
+        if len(val) == 10 and val[2] == '.' and val[5] == '.':
+            return val
+        # Excel serial number
+        if val.replace('.', '').isdigit() and '.' not in val:
+            return _excel_date(val)
+        return val
 
     for row in rows[1:]:        # пропускаем строку 1 (заголовки)
         if not row or not any(row):
             continue
 
-        # Точный маппинг колонок по реальному файлу
-        raw_date     = _s(row,  0)   # A: Data (числовая дата Excel)
-        num          = _s(row,  1)   # B: {num_otch}
-        # C(2) = installation date — обычно пусто в данных
-        oborud       = _s(row,  3)   # D: {oborud name}
-        serial       = _s(row,  4)   # E: {serial num}
-        # F(5) = пусто
-        where        = _s(row,  6)   # G: {where oborud}
-        org          = _s(row,  7)   # H: {Organizasiya}
-        addr         = _s(row,  8)   # I: {adress}
-        bss          = _s(row,  9)   # J: {boss name}
-        e1           = _s(row, 10)   # K: {engine1}
-        j1           = _s(row, 11)   # L: {job title1}
-        e2           = _s(row, 12)   # M: {engine2}
-        j2           = _s(row, 13)   # N: {job title2}
+        raw_doc_date   = _s(row,  0)   # A: дата документа
+        num            = _s(row,  1)   # B: №
+        raw_inst_date  = _s(row,  2)   # C: дата установки (может быть пустой)
+        oborud         = _s(row,  3)   # D: модель оборудования
+        serial         = _s(row,  4)   # E: серийный номер
+        where          = _s(row,  5)   # F: место установки — ПРАВИЛЬНАЯ колонка
+        org            = _s(row,  6)   # G: организация
+        addr           = _s(row,  7)   # H: адрес
+        # I(8) = пусто
+        bss            = _s(row,  9)   # J: руководитель
+        e1             = _s(row, 10)   # K: инженер 1
+        j1             = _s(row, 11)   # L: должность 1
+        e2             = _s(row, 12)   # M: инженер 2
+        j2             = _s(row, 13)   # N: должность 2
 
-        # Дата установки из колонки A (Excel serial → дд.мм.гггг)
-        if raw_date:
-            if raw_date.replace('.', '').isdigit() and '.' not in raw_date:
-                install_date = _excel_date(raw_date)
-            else:
-                install_date = raw_date
+        # Дата акта — из колонки A, берём из первой строки
+        if not doc_date and raw_doc_date:
+            doc_date = _to_date(raw_doc_date)
+
+        # Дата установки — сначала из C, если пусто — из A
+        if raw_inst_date:
+            install_date = _to_date(raw_inst_date)
+        elif raw_doc_date:
+            install_date = _to_date(raw_doc_date)
         else:
             install_date = datetime.now().strftime('%d.%m.%Y')
 
-        # Общие поля — берём из первой заполненной строки
-        if not org_name and org:
-            org_name = org
-        if not address and addr:
-            address = addr
-        if not boss and bss:
-            boss = bss
-        if not eng1 and e1:
-            eng1 = e1
-            job1 = j1
-        if not eng2 and e2:
-            eng2 = e2
-            job2 = j2
+        # Общие поля из первой заполненной строки
+        if not org_name and org:   org_name = org
+        if not address  and addr:  address  = addr
+        if not boss     and bss:   boss     = bss
+        if not eng1     and e1:    eng1 = e1; job1 = j1
+        if not eng2     and e2:    eng2 = e2; job2 = j2
 
         if not oborud:
             continue
@@ -346,15 +360,15 @@ def read_ust_excel(path: str) -> dict:
             'note':          where,
         })
 
-    # Дата документа = дата из первой строки данных
-    first_date = items[0]['install_date'] if items else datetime.now().strftime('%d.%m.%Y')
+    if not doc_date:
+        doc_date = datetime.now().strftime('%d.%m.%Y')
 
     return {
         'org_name':        org_name,
         'region':          org_name,
         'address':         address,
         'doc_number':      '1',
-        'doc_date':        first_date,
+        'doc_date':        doc_date,
         'commission_head': boss,
         'member1':         eng1,
         'member1_title':   job1 or 'Yetakchi muhandis',
