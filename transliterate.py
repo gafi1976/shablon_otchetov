@@ -355,16 +355,16 @@ TEXTS_UST = {
         'title':       "USKUNANI O\u02bbRNATISH DALOLATNOMASI",
         'dalolatnoma': "Dalolatnoma №",
         'intro':       "Mazkur dalolatnoma texnologik jarayonlarni modernizatsiya qilish "
-                       "doirasida quyidagi uskunalar o\u02bbnatilganligini tasdiqlash "
+                       "doirasida quyidagi uskunalar o\u02bbrnatilganligini tasdiqlash "
                        "maqsadida tuzildi.",
         'col_num':     "№",
-        'col_sana':    "O\u02bbnatilgan\nsana",
+        'col_sana':    "O\u02bbrnatilgan\nsana",
         'col_uskuna':  "Uskuna\n(Model)",
         'col_serial':  "Seriya\nraqami",
-        'col_qayer':   "Qayerga\no\u02bbnatilgan",
-        'outro':       "Yuqorida ko\u02bbsatilgan uskunalar belgilangan tartibda "
-                       "o\u02bbnatildi, tekshirildi va ekspluatatsiyaga topshirildi.",
-        'masul':       "O\u02bbnatish uchun mas\u02bbul shaxs",
+        'col_qayer':   "Qayerga\no\u02bbrnatilgan",
+        'outro':       "Yuqorida ko\u02bbrsatilgan uskunalar belgilangan tartibda "
+                       "o\u02bbrnatildi, tekshirildi va ekspluatatsiyaga topshirildi.",
+        'masul':       "O\u02bbrnatish uchun mas\u02bbul shaxs",
         'mp':          "M.P.",
         'sana':        "Sana:",
     },
