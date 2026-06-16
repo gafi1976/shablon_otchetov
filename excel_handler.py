@@ -109,17 +109,23 @@ def _make_sheet(ws, title_text, title_color, headers_widths, hdr_fill):
 
 SHABLON_NAME = 'shablon.xlsx'
 
-# Заголовки листа Spisaniye (9 колонок)
+# Заголовки листа Spisaniye (15 колонок)
 HEADERS_S = [
-    ('Tashkilot\n(Организация)',          28),
-    ('Rahbar\n(Руководитель)',             22),
-    ('Muhandis1\n(Инженер 1)',             22),
-    ('Muhandis2\n(Инженер 2)',             22),
-    ('Inventar\n(Инв. номер)',             16),
-    ('Qurilma\n(Оборудование)',            26),
-    ('Qism\n(Компонент)',                  22),
-    ('Holat\n(Yaroqli / Yaroqsiz)',        16),
-    ('Sabab\n(Причина / неисправность)',   28),
+    ('Tashkilot\n(Организация)',             28),
+    ('Rahbar\n(Руководитель)',               22),
+    ('Muhandis1\n(Инженер 1)',               22),
+    ('Muhandis2\n(Инженер 2)',               22),
+    ('Inventar\n(Инв. номер)',               16),
+    ('Qurilma\n(Оборудование)',              26),
+    ('Qism\n(Компонент)',                    22),
+    ('Holat\n(Yaroqli / Yaroqsiz)',          16),
+    ('Sabab\n(Причина / неисправность)',     28),
+    ('Narxi\n(Нарxi, сўм)',                  16),
+    ('Amort\n(Амортизация, сўм)',            18),
+    ('Norma\n(Норма, %)',                    12),
+    ('Qoldiq\n(Қолдиқ нарxi)',              16),
+    ('Debet\n(Дебет счёт)',                  14),
+    ('Kredit\n(Кредит счёт)',                14),
 ]
 
 # Заголовки листа Ustanovka (11 колонок)
@@ -391,9 +397,10 @@ def read_spisan_excel(path: str) -> list:
 
 def _parse_spisan_new(data_rows: list) -> list:
     """
-    Парсит данные нового формата:
+    Парсит данные нового формата (shablon.xlsx, лист Spisaniye):
     A=Tashkilot, B=Rahbar, C=Muhandis1, D=Muhandis2,
-    E=Inventar, F=Qurilma, G=Qism, H=Holat, I=Sabab
+    E=Inventar, F=Qurilma, G=Qism, H=Holat, I=Sabab,
+    J=Narxi, K=Amort, L=Norma, M=Qoldiq, N=Debet, O=Kredit
     """
     inv_data  = {}
     inv_order = []
@@ -401,15 +408,21 @@ def _parse_spisan_new(data_rows: list) -> list:
     for row in data_rows:
         if not row or not any(row):
             continue
-        tashkilot = _g(row, 0)
-        rahbar    = _g(row, 1)
-        muh1      = _g(row, 2)
-        muh2      = _g(row, 3)
-        inventar  = _g(row, 4)
-        qurilma   = _g(row, 5)
-        qism      = _g(row, 6)
-        holat     = _g(row, 7)
-        sabab     = _g(row, 8)
+        tashkilot = _g(row,  0)
+        rahbar    = _g(row,  1)
+        muh1      = _g(row,  2)
+        muh2      = _g(row,  3)
+        inventar  = _g(row,  4)
+        qurilma   = _g(row,  5)
+        qism      = _g(row,  6)
+        holat     = _g(row,  7)
+        sabab     = _g(row,  8)
+        narxi     = _g(row,  9)
+        amort     = _g(row, 10)
+        norma     = _g(row, 11)
+        qoldiq    = _g(row, 12)
+        debet     = _g(row, 13)
+        kredit    = _g(row, 14)
 
         if not inventar:
             continue
@@ -423,6 +436,12 @@ def _parse_spisan_new(data_rows: list) -> list:
                 'commission_head': rahbar,
                 'member1':         muh1,
                 'member2':         muh2,
+                'narxi':           narxi,
+                'amort':           amort,
+                'norma':           norma,
+                'qoldiq':          qoldiq,
+                'debet':           debet or '9210',
+                'kredit':          kredit or '0150',
                 'devices':         {},
                 'dev_order':       [],
             }
@@ -433,6 +452,13 @@ def _parse_spisan_new(data_rows: list) -> list:
         if not g['commission_head'] and rahbar:    g['commission_head'] = rahbar
         if not g['member1']         and muh1:      g['member1']         = muh1
         if not g['member2']         and muh2:      g['member2']         = muh2
+        # Обновляем финансовые поля если они заполнены
+        if not g['narxi']  and narxi:  g['narxi']  = narxi
+        if not g['amort']  and amort:  g['amort']  = amort
+        if not g['norma']  and norma:  g['norma']  = norma
+        if not g['qoldiq'] and qoldiq: g['qoldiq'] = qoldiq
+        if not g['debet']  and debet:  g['debet']  = debet
+        if not g['kredit'] and kredit: g['kredit'] = kredit
 
         if qurilma:
             if qurilma not in g['devices']:
@@ -520,6 +546,12 @@ def _build_groups(inv_data: dict, inv_order: list) -> list:
             'commission_head': g['commission_head'],
             'member1':         g['member1'],
             'member2':         g['member2'],
+            'narxi':           g.get('narxi', ''),
+            'amort':           g.get('amort', '0.00'),
+            'norma':           g.get('norma', ''),
+            'qoldiq':          g.get('qoldiq', '0.00'),
+            'debet':           g.get('debet', '9210'),
+            'kredit':          g.get('kredit', '0150'),
             'devices': [
                 {'name': dn, 'parts': g['devices'][dn]}
                 for dn in g['dev_order']

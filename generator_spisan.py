@@ -1,12 +1,12 @@
 # generator_spisan.py
-# Генератор Word актов СПИСАНИЯ
-# Поддерживает два алфавита: lang='latin' (по умолчанию) или lang='cyrillic'
+# Альбомный акт списания основных средств
+# Образец: AKTOC2026N20.docx
 
 import os
 import copy
 from datetime import datetime
 from docx import Document
-from docx.shared import Pt, RGBColor, Cm
+from docx.shared import Pt, RGBColor, Cm, Twips
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
 from docx.oxml.ns import qn
@@ -14,117 +14,207 @@ from docx.oxml import OxmlElement
 
 from transliterate import TEXTS_SPISAN, MONTHS, convert_to, detect_script
 
+
+
 # ─────────────────────────────────────────────
 #  Вспомогательные функции
 # ─────────────────────────────────────────────
 
 def _set_cell_bg(cell, hex_color):
-    tc = cell._tc
-    tcPr = tc.get_or_add_tcPr()
+    tc = cell._tc; tcPr = tc.get_or_add_tcPr()
     shd = OxmlElement('w:shd')
     shd.set(qn('w:val'), 'clear')
     shd.set(qn('w:color'), 'auto')
     shd.set(qn('w:fill'), hex_color)
     tcPr.append(shd)
 
-def _set_cell_border(cell, color='2E4057'):
-    tc = cell._tc
-    tcPr = tc.get_or_add_tcPr()
+
+def _set_cell_border(cell, color='333333'):
+    tc = cell._tc; tcPr = tc.get_or_add_tcPr()
     tcBorders = OxmlElement('w:tcBorders')
-    for edge in ('top', 'left', 'bottom', 'right'):
+    for edge in ('top','left','bottom','right'):
         b = OxmlElement(f'w:{edge}')
         b.set(qn('w:val'), 'single')
-        b.set(qn('w:sz'), '6')
+        b.set(qn('w:sz'), '4')
         b.set(qn('w:space'), '0')
         b.set(qn('w:color'), color)
         tcBorders.append(b)
     tcPr.append(tcBorders)
 
-def _set_margins(doc, top=2.0, bottom=2.0, left=2.5, right=1.5):
-    sec = doc.sections[0]
-    sec.top_margin    = Cm(top)
-    sec.bottom_margin = Cm(bottom)
-    sec.left_margin   = Cm(left)
-    sec.right_margin  = Cm(right)
 
-def _p(doc, text='', bold=False, size=12, align=WD_ALIGN_PARAGRAPH.LEFT,
-       color=None, before=0, after=4, italic=False):
+def _no_border(cell):
+    tc = cell._tc; tcPr = tc.get_or_add_tcPr()
+    tcBorders = OxmlElement('w:tcBorders')
+    for edge in ('top','left','bottom','right'):
+        b = OxmlElement(f'w:{edge}')
+        b.set(qn('w:val'), 'none')
+        b.set(qn('w:sz'), '0')
+        b.set(qn('w:space'), '0')
+        b.set(qn('w:color'), 'auto')
+        tcBorders.append(b)
+    tcPr.append(tcBorders)
+
+
+def _p(doc, text='', bold=False, size=10, align=WD_ALIGN_PARAGRAPH.LEFT,
+       color=None, before=0, after=2, italic=False):
     p = doc.add_paragraph()
     p.alignment = align
     p.paragraph_format.space_before = Pt(before)
     p.paragraph_format.space_after  = Pt(after)
-    p.paragraph_format.line_spacing = Pt(15)
+    p.paragraph_format.line_spacing = Pt(12)
     if text:
         run = p.add_run(text)
-        run.bold   = bold
-        run.italic = italic
-        run.font.size = Pt(size)
-        run.font.name = 'Times New Roman'
-        if color:
-            run.font.color.rgb = RGBColor(*color)
+        run.bold = bold; run.italic = italic
+        run.font.size = Pt(size); run.font.name = 'Times New Roman'
+        if color: run.font.color.rgb = RGBColor(*color)
     return p
 
-def _hr(doc, color='2E4057'):
-    p = doc.add_paragraph()
+
+def _cell_p(cell, text='', bold=False, size=9,
+            align=WD_ALIGN_PARAGRAPH.CENTER, italic=False, color=None):
+    for p in list(cell.paragraphs):
+        p._element.getparent().remove(p._element)
+    p = cell.add_paragraph()
+    p.alignment = align
     p.paragraph_format.space_before = Pt(0)
-    p.paragraph_format.space_after  = Pt(4)
-    pPr = p._p.get_or_add_pPr()
-    pBdr = OxmlElement('w:pBdr')
-    e = OxmlElement('w:bottom')
-    e.set(qn('w:val'), 'single')
-    e.set(qn('w:sz'), '12')
-    e.set(qn('w:space'), '1')
-    e.set(qn('w:color'), color)
-    pBdr.append(e)
-    pPr.append(pBdr)
+    p.paragraph_format.space_after  = Pt(0)
+    p.paragraph_format.line_spacing = Pt(11)
+    if text:
+        r = p.add_run(text)
+        r.bold = bold; r.italic = italic
+        r.font.size = Pt(size); r.font.name = 'Times New Roman'
+        if color: r.font.color.rgb = RGBColor(*color)
+    return p
+
 
 def _auto_lang(group: dict) -> str:
-    """
-    Автоматически определяет язык по тексту в данных группы.
-    Смотрит org_name, commission_head, member1 — берёт первый непустой.
-    """
     for key in ('org_name', 'commission_head', 'member1', 'member2'):
         val = group.get(key, '').strip()
         if val:
-            script = detect_script(val)
-            if script in ('latin', 'cyrillic'):
-                return script
-    # Смотрим названия устройств
+            s = detect_script(val)
+            if s in ('latin', 'cyrillic'): return s
     for dev in group.get('devices', []):
-        name = dev.get('name', '').strip()
-        if name:
-            script = detect_script(name)
-            if script in ('latin', 'cyrillic'):
-                return script
-    return 'latin'  # по умолчанию
+        s = detect_script(dev.get('name', ''))
+        if s in ('latin', 'cyrillic'): return s
+    return 'latin'
+
+
+
+def _set_landscape(doc):
+    """Альбомная ориентация А4, минимальные поля как в образце."""
+    section = doc.sections[0]
+    section.page_width  = Cm(29.7)
+    section.page_height = Cm(21.0)
+    section.top_margin    = Cm(0.8)
+    section.bottom_margin = Cm(0.8)
+    section.left_margin   = Cm(2.0)
+    section.right_margin  = Cm(2.0)
+    # Устанавливаем альбомную ориентацию через XML
+    sectPr = section._sectPr
+    pgSz = sectPr.find(qn('w:pgSz'))
+    if pgSz is None:
+        pgSz = OxmlElement('w:pgSz')
+        sectPr.append(pgSz)
+    pgSz.set(qn('w:orient'), 'landscape')
 
 
 # ─────────────────────────────────────────────
-#  Основной генератор
+#  ТЕКСТЫ документа (кириллица — образец)
+# ─────────────────────────────────────────────
+
+TEXTS_CYR = {
+    'tasdiq':     'Тасдиқлайман:',
+    'title1':     'АСОСИЙ ВОСИТАЛАРНИ РЎЙХАТДАН ЧИҚАРИШ БЎЙИЧА',
+    'title2':     'ДАЛОЛАТНОМА',
+    'komissiya':  'АБМ {org} томонидан {date} йил {order} сонли буйруғи билан тайинланган комиссия қуйидагиларга асосан',
+    'ish_chiq':   'йилда ишлаб чиқилган.',
+    'kelgan':     'йилда корхонага келган.',
+    'ishga':      'йилда ишга туширилган.',
+    'kapital':    'Капитал таъмирлаш сони _____ унга _________ сўм харажат қилинган.',
+    'texnik':     'Техник ҳолати:   маънавий эскирган, ишга яроқсиз ҳолга келган, тузатиш мақсадга мувофиқ эмас.',
+    'xulosa_txt': 'Комиссия хулосаси: {org} да ишлатилган {names} {date} йил «{day}» {month} "Техник хулоса" га асосан асосий воситалар рўйхатидан чиқарилсин.',
+    'moddiy':     'Бўлим бўйича моддий жавобгар шахс:',
+    'komrais':    'Комиссия раиси {org}:',
+    'komazolari': 'Комиссия аъзолари:',
+    'muhandis':   'Етакчи муҳандис',
+    'rahbar_title': 'раҳбари',
+    # Таблица
+    'bulim':      'Бўлим',
+    'debet':      'Дебет\nҲисобварақ\nкоди',
+    'kredit':     'Кредит\nҲисобварақ\nкоди',
+    'nomi':       'Номи',
+    'narxi':      'Нархи\n(сўм)',
+    'inv':        'Инв.№',
+    'amort':      'Амортизация\nчегирмалари\nсуммаси',
+    'norma':      'Амортизация\nнормаси\n(%)',
+    'qoldiq':     'Қолдиқ\nнархи',
+}
+
+TEXTS_LAT = {
+    'tasdiq':     "Tasdiqlayman:",
+    'title1':     "ASOSIY VOSITALARNI RO'YXATDAN CHIQARISH BO'YICHA",
+    'title2':     'DALOLATNOMA',
+    'komissiya':  "ABM {org} tomonidan {date} yil {order} sonli buyrug'i bilan tayinlangan komissiya quyidagilarga asosan",
+    'ish_chiq':   'yilda ishlab chiqilgan.',
+    'kelgan':     'yilda korxonaga kelgan.',
+    'ishga':      'yilda ishga tushirilgan.',
+    'kapital':    "Kapital ta'mirlash soni _____ unga _________ so'm xarajat qilingan.",
+    'texnik':     "Texnik holati: ma'naviy eskirgan, ishga yaroqsiz holga kelgan, tuzatish maqsadga muvofiq emas.",
+    'xulosa_txt': "Komissiya xulosasi: {org} da ishlatilingan {names} {date} yil «{day}» {month} \"Texnik xulosa\" ga asosan asosiy vositalar ro'yxatidan chiqarilsin.",
+    'moddiy':     "Bo'lim bo'yicha moddiy javobgar shaxs:",
+    'komrais':    "Komissiya raisi {org}:",
+    'komazolari': "Komissiya a'zolari:",
+    'muhandis':   'Yetakchi muhandis',
+    'rahbar_title': 'rahbari',
+    'bulim':      "Bo'lim",
+    'debet':      'Debet\nHisob\nraqam',
+    'kredit':     'Kredit\nHisob\nraqam',
+    'nomi':       'Nomi',
+    'narxi':      "Narxi\n(so'm)",
+    'inv':        'Inv.№',
+    'amort':      'Amortizatsiya\negirmalari\nsummasi',
+    'norma':      'Amortizatsiya\nnormasi\n(%)',
+    'qoldiq':     'Qoldiq\nnarxi',
+}
+
+
+
+# ─────────────────────────────────────────────
+#  Основной генератор — один документ
 # ─────────────────────────────────────────────
 
 def create_spisan_doc(group: dict, doc_number: str = '1',
                       lang: str = 'auto') -> Document:
     """
-    Создаёт Word акт технического заключения (списания).
-
+    Создаёт альбомный акт списания основных средств.
     group = {
-        'inv_number':      str,
-        'devices': [{'name': str, 'parts': [{'part_name','condition','defect'}]}],
-        'org_name':        str,
-        'region':          str,
+        'inv_number': str,
+        'devices': [{'name': str, 'parts': [...]}],
+        'org_name': str,
+        'region': str,
         'commission_head': str,
-        'member1':         str,
-        'member2':         str,
-        'doc_date':        str,   # дд.мм.гггг
+        'member1': str,
+        'member2': str,
+        'doc_date': str,         # дд.мм.гггг
+        'narxi': str,            # стоимость (опц.)
+        'amort': str,            # амортизация (опц.)
+        'norma': str,            # норма (опц.)
+        'qoldiq': str,           # остаток (опц.)
+        'debet': str,            # счёт дебет (опц.)
+        'kredit': str,           # счёт кредит (опц.)
+        'bulim': str,            # подразделение (опц.)
+        'order_info': str,       # реквизиты приказа (опц.)
+        'year_made': str,        # год изготовления (опц.)
+        'year_arrived': str,     # год поступления (опц.)
+        'year_started': str,     # год ввода (опц.)
     }
-    lang: 'latin' | 'cyrillic' | 'auto'
     """
-    # Определяем язык
     if lang == 'auto':
         lang = _auto_lang(group)
 
-    # Конвертируем пользовательские данные если нужно
+    T = TEXTS_CYR if lang == 'cyrillic' else TEXTS_LAT
+    M = MONTHS[lang]
+
     org_name = convert_to(group.get('org_name', ''),        lang)
     region   = convert_to(group.get('region', ''),          lang)
     boss     = convert_to(group.get('commission_head', ''), lang)
@@ -132,309 +222,189 @@ def create_spisan_doc(group: dict, doc_number: str = '1',
     eng2     = convert_to(group.get('member2', ''),         lang)
     inv      = group.get('inv_number', '')
 
-    # Устройства и компоненты:
-    # - названия (part_name, device name) — НЕ конвертируем
-    # - значения (condition/Holat, defect/Sabab) — конвертируем
-    devices = []
-    for dev in group.get('devices', []):
-        parts = []
-        for p in dev.get('parts', []):
-            parts.append({
-                'part_name': p.get('part_name', ''),                    # не конвертируем
-                'condition': convert_to(p.get('condition', ''), lang),  # конвертируем
-                'defect':    convert_to(p.get('defect', ''),    lang),  # конвертируем
-            })
-        devices.append({
-            'name':  dev.get('name', ''),   # не конвертируем
-            'parts': parts,
-        })
+    devices  = group.get('devices', [])
 
-    # Системные тексты по выбранному алфавиту
-    T = TEXTS_SPISAN[lang]
-    M = MONTHS[lang]
-
-    # Дата
     today    = datetime.now()
     date_str = group.get('doc_date', today.strftime('%d.%m.%Y'))
     try:
-        dt    = datetime.strptime(date_str, '%d.%m.%Y')
-        day   = str(dt.day)
-        month = M[dt.month]
-        year  = str(dt.year)
+        dt = datetime.strptime(date_str, '%d.%m.%Y')
+        day = str(dt.day); month = M[dt.month]; year = str(dt.year)
     except Exception:
-        day   = str(today.day)
-        month = M[today.month]
-        year  = str(today.year)
+        day = str(today.day); month = M[today.month]; year = str(today.year)
 
-    # ── Создаём документ ──
+    # Доп. поля
+    narxi      = group.get('narxi', '')
+    amort      = group.get('amort', '0.00')
+    norma      = group.get('norma', '')
+    qoldiq     = group.get('qoldiq', '0.00')
+    debet      = group.get('debet', '9210')
+    kredit     = group.get('kredit', '0150')
+    bulim      = convert_to(group.get('bulim', org_name), lang)
+    order_info = group.get('order_info', '')
+    year_made  = group.get('year_made', '')
+    year_arr   = group.get('year_arrived', '')
+    year_start = group.get('year_started', '')
+
+    # Все устройства из группы
+    dev_names = [d.get('name','').strip() for d in devices if d.get('name','').strip()]
+    names_str = ', '.join(dev_names)
+
     doc = Document()
-    _set_margins(doc)
+    _set_landscape(doc)
     style = doc.styles['Normal']
     style.font.name = 'Times New Roman'
-    style.font.size = Pt(12)
+    style.font.size = Pt(10)
 
-    # ══════════════════════════════════
-    #  ШАПКА — таблица: пустая левая | текст справа
-    # ══════════════════════════════════
-    hdr_tbl = doc.add_table(rows=1, cols=2)
-    hdr_tbl.alignment = WD_TABLE_ALIGNMENT.RIGHT
-    for cell in hdr_tbl.rows[0].cells:
-        tc = cell._tc
-        tcPr = tc.get_or_add_tcPr()
-        tcBorders = OxmlElement('w:tcBorders')
-        for edge in ('top','left','bottom','right'):
-            b = OxmlElement(f'w:{edge}')
-            b.set(qn('w:val'), 'none')
-            b.set(qn('w:sz'), '0')
-            b.set(qn('w:space'), '0')
-            b.set(qn('w:color'), 'auto')
-            tcBorders.append(b)
-        tcPr.append(tcBorders)
+    # ══════════════════════
+    #  ШАПКА — справа
+    # ══════════════════════
+    p_hdr = doc.add_paragraph()
+    p_hdr.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p_hdr.paragraph_format.space_before = Pt(0)
+    p_hdr.paragraph_format.space_after  = Pt(0)
 
-    hdr_tbl.rows[0].cells[0].width = Cm(8)
-    hdr_tbl.rows[0].cells[1].width = Cm(9)
-    right_cell = hdr_tbl.rows[0].cells[1]
-
-    # Удаляем пустой параграф по умолчанию (безопасно — копируем список)
-    for p in list(right_cell.paragraphs):
-        p._element.getparent().remove(p._element)
-
-    def hdr_p(text, bold=False, size=11):
-        p = right_cell.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.paragraph_format.space_before = Pt(0)
-        p.paragraph_format.space_after  = Pt(1)
-        p.paragraph_format.line_spacing = Pt(14)
+    def rr(p, text, bold=False, size=10):
         r = p.add_run(text)
-        r.bold = bold
-        r.font.size = Pt(size)
-        r.font.name = 'Times New Roman'
-        return p
+        r.bold = bold; r.font.size = Pt(size); r.font.name = 'Times New Roman'
 
-    # «TASDIQLAYMAN»
-    hdr_p(T['tasdiq'], bold=True, size=11)
+    rr(p_hdr, f'{T["tasdiq"]}\n', bold=True, size=10)
+    rr(p_hdr, f'{org_name}\n', size=10)
+    rr(p_hdr, f'___________ {boss}\n', size=10)
+    rr(p_hdr, f'{year} й. «_____»  ____________', size=10)
 
-    # Организация + должность — разбиваем на 2 строки если длинно
-    # В TEXTS_SPISAN нет 'rahbar' — используем должность из данных или пустую строку
-    rahbar_title = T.get('rahbar', '')
-    org_rahbar = f'{org_name} {rahbar_title}'.strip() if rahbar_title else org_name
-    if len(org_rahbar) > 40:
-        words = org_rahbar.split()
-        mid   = len(words) // 2
-        hdr_p(' '.join(words[:mid]), size=10)
-        hdr_p(' '.join(words[mid:]), size=10)
-    else:
-        hdr_p(org_rahbar, size=10)
+    doc.add_paragraph().paragraph_format.space_after = Pt(4)
 
-    # Линия подписи + ФИО
-    sign_p = right_cell.add_paragraph()
-    sign_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    sign_p.paragraph_format.space_before = Pt(2)
-    sign_p.paragraph_format.space_after  = Pt(1)
-    sign_p.paragraph_format.line_spacing = Pt(14)
-    r_line = sign_p.add_run('________________  ')
-    r_line.font.size = Pt(10)
-    r_line.font.name = 'Times New Roman'
-    r_boss = sign_p.add_run(boss)
-    r_boss.font.size = Pt(10)
-    r_boss.font.name = 'Times New Roman'
-
-    # Дата
-    hdr_p(f'«{day}» {month} {year} {T["yil"]}', size=10)
-
-    doc.add_paragraph().paragraph_format.space_after = Pt(2)
-    _hr(doc)
-
-    # ══════════════════════════════════
+    # ══════════════════════
     #  ЗАГОЛОВОК
-    # ══════════════════════════════════
-    _p(doc, f'{T["title"]} {doc_number}',
-       bold=True, size=15, align=WD_ALIGN_PARAGRAPH.CENTER,
-       color=(0x2E, 0x40, 0x57), before=6, after=6)
+    # ══════════════════════
+    _p(doc, T['title1'], bold=True, size=12,
+       align=WD_ALIGN_PARAGRAPH.CENTER, before=2, after=0)
+    _p(doc, f'№ {doc_number}  - СОН {T["title2"]}',
+       bold=True, size=12,
+       align=WD_ALIGN_PARAGRAPH.CENTER, before=0, after=4)
 
-    subtitle = f'{org_name}  |  {region}' if region else org_name
-    _p(doc, subtitle,
-       size=10, align=WD_ALIGN_PARAGRAPH.CENTER,
-       italic=True, after=8, color=(0x55, 0x55, 0x55))
-
-    # ══════════════════════════════════
-    #  ВВОДНЫЙ ТЕКСТ
-    # ══════════════════════════════════
-    intro = doc.add_paragraph()
-    intro.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-    intro.paragraph_format.space_before = Pt(0)
-    intro.paragraph_format.space_after  = Pt(8)
-    intro.paragraph_format.line_spacing = Pt(16)
-    intro_text = '\t' + T['intro'].format(org=org_name, region=region,
-                                          eng1=eng1, eng2=eng2)
-    ir = intro.add_run(intro_text)
-    ir.font.size = Pt(12)
-    ir.font.name = 'Times New Roman'
-
-    # ══════════════════════════════════
+    # ══════════════════════
     #  ТАБЛИЦА
-    # ══════════════════════════════════
-    COL_WIDTHS   = [Cm(6.0), Cm(4.5), Cm(7.0)]
-    HEADER_COLOR = '2E4057'
-    EVEN_BG      = 'F0F4F8'
-    ODD_BG       = 'FFFFFF'
-    BAD_COLOR    = (0xC0, 0x39, 0x2B)
-    GOOD_COLOR   = (0x1E, 0x8B, 0x4C)
+    # ══════════════════════
+    # Колонки: Бўлим | Дебет | Кредит | Номи | Нархи | Инв.№ | Амортизация | Норма | Қолдиқ
+    col_widths = [Cm(3.0), Cm(2.2), Cm(2.2), Cm(6.0), Cm(3.0),
+                  Cm(2.8), Cm(3.2), Cm(2.5), Cm(2.8)]
+    col_keys   = ['bulim','debet','kredit','nomi','narxi',
+                  'inv','amort','norma','qoldiq']
+    HDR_FILL   = '2E4057'
 
-    table = doc.add_table(rows=0, cols=3)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table = doc.add_table(rows=2, cols=len(col_widths))
     table.style = 'Table Grid'
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
 
-    for dev in devices:
-        dev_name = dev.get('name', '').strip()
-        parts    = dev.get('parts', [])
-
-        # Объединённая строка: Qurilma nomi + Inventar raqami
-        title_row = table.add_row()
-        title_row.cells[0].merge(title_row.cells[1])
-        title_row.cells[0].merge(title_row.cells[2])
-        cell = title_row.cells[0]
-        _set_cell_bg(cell, 'D6EAF8')
-        _set_cell_border(cell, '2E4057')
+    # Строка заголовков
+    hdr_row = table.rows[0]
+    hdr_row.height = Twips(900)
+    for ci, (w, key) in enumerate(zip(col_widths, col_keys)):
+        cell = hdr_row.cells[ci]
+        cell.width = w
+        _set_cell_bg(cell, HDR_FILL)
+        _set_cell_border(cell, HDR_FILL)
         cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-        p_t = cell.paragraphs[0]
-        p_t.paragraph_format.space_before = Pt(3)
-        p_t.paragraph_format.space_after  = Pt(3)
+        _cell_p(cell, T[key], bold=True, size=8,
+                align=WD_ALIGN_PARAGRAPH.CENTER, color=(255,255,255))
 
-        for txt, bold, color in [
-            (f'{T["qurilma"]}  ', True,  (0x1A, 0x52, 0x76)),
-            (dev_name,           True,  None),
-            (f'     {T["inventar"]}  ', True, (0x1A, 0x52, 0x76)),
-            (inv,                True,  None),
-        ]:
-            r = p_t.add_run(txt)
-            r.bold = bold
-            r.font.size = Pt(11)
-            r.font.name = 'Times New Roman'
-            if color:
-                r.font.color.rgb = RGBColor(*color)
-
-        # Заголовок колонок
-        hdr_row = table.add_row()
-        hdr_row.height = Pt(22)
-        for ci, (cell, label, w) in enumerate(zip(
-                hdr_row.cells,
-                [T['col_qism'], T['col_yarоq'], T['col_nosoz']],
-                COL_WIDTHS)):
-            cell.width = w
-            _set_cell_bg(cell, HEADER_COLOR)
-            _set_cell_border(cell, HEADER_COLOR)
-            cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-            p = cell.paragraphs[0]
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            p.paragraph_format.space_before = Pt(2)
-            p.paragraph_format.space_after  = Pt(2)
-            p.paragraph_format.line_spacing = Pt(13)
-            run = p.add_run(label)
-            run.bold = True
-            run.font.size = Pt(9)
-            run.font.name = 'Times New Roman'
-            run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
-
-        # Строки компонентов
-        for pi, part in enumerate(parts):
-            part_name = part.get('part_name', '')
-            condition = part.get('condition', '')
-            defect    = part.get('defect', '')
-            is_bad    = any(w in condition.lower() for w in
-                           ('yaroqsiz', 'яроқсиз', 'yaramsiz', 'нет', 'неисправен'))
-
-            data_row = table.add_row()
-            data_row.height = Pt(20)
-            bg = EVEN_BG if pi % 2 == 0 else ODD_BG
-
-            for ci, (cell, val) in enumerate(zip(data_row.cells,
-                                                  [part_name, condition, defect])):
-                _set_cell_bg(cell, bg)
-                _set_cell_border(cell)
-                cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-                p = cell.paragraphs[0]
-                p.alignment = (WD_ALIGN_PARAGRAPH.CENTER if ci == 1
-                               else WD_ALIGN_PARAGRAPH.LEFT)
-                p.paragraph_format.space_before = Pt(2)
-                p.paragraph_format.space_after  = Pt(2)
-                p.paragraph_format.line_spacing = Pt(13)
-                run = p.add_run(val)
-                run.font.size = Pt(10)
-                run.font.name = 'Times New Roman'
-                if ci == 1:
-                    if is_bad:
-                        run.font.color.rgb = RGBColor(*BAD_COLOR)
-                        run.bold = True
-                    else:
-                        run.font.color.rgb = RGBColor(*GOOD_COLOR)
+    # Строка данных
+    data_row = table.rows[1]
+    data_row.height = Twips(400)
+    row_values = [bulim, debet, kredit, names_str, narxi,
+                  inv, amort, norma, qoldiq]
+    for ci, (w, val) in enumerate(zip(col_widths, row_values)):
+        cell = data_row.cells[ci]
+        cell.width = w
+        _set_cell_border(cell)
+        cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+        _cell_p(cell, val, size=9,
+                align=WD_ALIGN_PARAGRAPH.LEFT if ci in (0,3) else WD_ALIGN_PARAGRAPH.CENTER)
 
     doc.add_paragraph().paragraph_format.space_after = Pt(6)
 
-    # ══════════════════════════════════
-    #  XULOSA / ХУЛОСА
-    # ══════════════════════════════════
-    _p(doc, T['xulosa'], bold=True, size=13,
-       align=WD_ALIGN_PARAGRAPH.CENTER,
-       color=(0x2E, 0x40, 0x57), before=6, after=4)
+    # ══════════════════════
+    #  ТЕКСТ ЗАКЛЮЧЕНИЯ
+    # ══════════════════════
+    # Комиссия
+    comm_text = T['komissiya'].format(
+        org=org_name,
+        date=year,
+        order=order_info or '___'
+    )
+    _p(doc, comm_text, size=10, align=WD_ALIGN_PARAGRAPH.LEFT, before=0, after=2)
 
-    dev_names = [d.get('name', '').strip() for d in devices if d.get('name', '').strip()]
-    names_str = ', '.join(f'«{n}»' for n in dev_names)
+    # История оборудования
+    for yr, key in [(year_made,'ish_chiq'),(year_arr,'kelgan'),(year_start,'ishga')]:
+        _p(doc, f'{yr or "____"} {T[key]}', size=10, before=0, after=1)
 
-    for txt_key in ('xulosa1', 'xulosa2'):
-        xp = doc.add_paragraph()
-        xp.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        xp.paragraph_format.space_before = Pt(0)
-        xp.paragraph_format.space_after  = Pt(4)
-        xp.paragraph_format.line_spacing = Pt(16)
-        text = '\t' + T[txt_key].format(names=names_str)
-        xr = xp.add_run(text)
-        xr.font.size = Pt(12)
-        xr.font.name = 'Times New Roman'
+    _p(doc, T['kapital'],  size=10, before=0, after=1)
+    _p(doc, T['texnik'],   size=10, before=0, after=2)
 
-    doc.add_paragraph().paragraph_format.space_after = Pt(10)
+    # Хулоса
+    xulosa = T['xulosa_txt'].format(
+        org=org_name,
+        names=names_str,
+        date=year,
+        day=day,
+        month=month,
+    )
+    _p(doc, xulosa, size=10, align=WD_ALIGN_PARAGRAPH.LEFT,
+       before=0, after=6)
 
-    # ══════════════════════════════════
+    # ══════════════════════
     #  ПОДПИСИ
-    # ══════════════════════════════════
-    sig_tbl = doc.add_table(rows=2, cols=3)
-    sig_tbl.alignment = WD_TABLE_ALIGNMENT.LEFT
-    for i, engineer in enumerate([eng1, eng2]):
-        row = sig_tbl.rows[i]
-        row.cells[0].width = Cm(5)
-        row.cells[1].width = Cm(7)
-        row.cells[2].width = Cm(5)
+    # ══════════════════════
+    # Моддий жавобгар
+    p_mod = doc.add_paragraph()
+    p_mod.paragraph_format.space_before = Pt(0)
+    p_mod.paragraph_format.space_after  = Pt(4)
+    r1 = p_mod.add_run(f'{T["moddiy"]}  _______________ ')
+    r1.font.size = Pt(10); r1.font.name = 'Times New Roman'
+    r2 = p_mod.add_run(boss)
+    r2.bold = True; r2.font.size = Pt(10); r2.font.name = 'Times New Roman'
 
-        def sc(cell, text, bold=False):
-            p = cell.paragraphs[0]
-            p.paragraph_format.space_before = Pt(0)
-            p.paragraph_format.space_after  = Pt(8)
-            r = p.add_run(text)
-            r.bold = bold
-            r.font.size = Pt(11)
-            r.font.name = 'Times New Roman'
+    # Комиссия раиси
+    p_rais = doc.add_paragraph()
+    p_rais.paragraph_format.space_before = Pt(0)
+    p_rais.paragraph_format.space_after  = Pt(3)
+    r1 = p_rais.add_run(f'{T["komrais"].format(org=org_name)}')
+    r1.font.size = Pt(10); r1.font.name = 'Times New Roman'
+    r2 = p_rais.add_run(f'                    _____________ {boss}')
+    r2.font.size = Pt(10); r2.font.name = 'Times New Roman'
 
-        sc(row.cells[0], T['muhandis'], bold=True)
-        sc(row.cells[1], '______________________')
-        sc(row.cells[2], engineer)
+    # Члены комиссии
+    p_az = doc.add_paragraph()
+    p_az.paragraph_format.space_before = Pt(0)
+    p_az.paragraph_format.space_after  = Pt(2)
+    rr_az = p_az.add_run(T['komazolari'])
+    rr_az.font.size = Pt(10); rr_az.font.name = 'Times New Roman'
+
+    for engineer in [eng1, eng2]:
+        if not engineer:
+            continue
+        p_e = doc.add_paragraph()
+        p_e.paragraph_format.space_before = Pt(0)
+        p_e.paragraph_format.space_after  = Pt(2)
+        r_t = p_e.add_run(f'{T["muhandis"]}                                           ____________')
+        r_t.font.size = Pt(10); r_t.font.name = 'Times New Roman'
+        r_n = p_e.add_run(engineer)
+        r_n.font.size = Pt(10); r_n.font.name = 'Times New Roman'
 
     return doc
 
 
+
 # ─────────────────────────────────────────────
-#  Сохранение
+#  Сохранение — каждая группа отдельным файлом
 # ─────────────────────────────────────────────
 
 def _safe_filename(text: str) -> str:
-    """Убирает все символы недопустимые в имени файла Windows/Linux."""
-    # Заменяем переносы строк, табуляции и пробелы на подчёркивание
-    text = text.replace('\n', '_').replace('\r', '').replace('\t', '_')
-    # Убираем недопустимые символы Windows: \ / : * ? " < > |
+    text = text.replace('\n','_').replace('\r','').replace('\t','_')
     for ch in r'\/:*?"<>|':
         text = text.replace(ch, '-')
-    # Убираем лишние пробелы и подчёркивания
-    text = '_'.join(text.split())
-    return text[:60] or 'doc'  # максимум 60 символов
+    return '_'.join(text.split())[:60] or 'doc'
 
 
 def save_single_files(groups: list, output_dir: str,
@@ -445,33 +415,36 @@ def save_single_files(groups: list, output_dir: str,
     for i, group in enumerate(groups, start=1):
         inv  = _safe_filename(group.get('inv_number', str(i)))
         doc  = create_spisan_doc(group, doc_number=str(i), lang=lang)
-        name = f'Texnik_Xulosa_{inv}.docx'
+        name = f'Akt_Spisaniya_{inv}.docx'
         path = os.path.join(output_dir, name)
         doc.save(path)
         created.append(path)
     return created
 
 
+# ─────────────────────────────────────────────
+#  Сохранение — все группы в одном файле
+#  Единая таблица + единое заключение
+# ─────────────────────────────────────────────
+
 def save_all_in_one(groups: list, output_path: str,
                     lang: str = 'auto') -> str:
     """
-    Все группы в одном документе — единая шапка + единая таблица.
-    Каждая группа добавляет свои строки в общую таблицу.
+    Все группы в одном альбомном документе.
+    Единая шапка, единая таблица (каждая группа — строка),
+    единое заключение и подписи.
     """
     if not groups:
         return output_path
 
-    # Определяем язык по первой группе
     if lang == 'auto':
         lang = _auto_lang(groups[0])
 
-    T = TEXTS_SPISAN[lang]
-    M = MONTHS[lang]
+    T  = TEXTS_CYR if lang == 'cyrillic' else TEXTS_LAT
+    M  = MONTHS[lang]
 
-    # Берём общие данные из первой группы
     first    = groups[0]
     org_name = convert_to(first.get('org_name', ''),        lang)
-    region   = convert_to(first.get('region', ''),          lang)
     boss     = convert_to(first.get('commission_head', ''), lang)
     eng1     = convert_to(first.get('member1', ''),         lang)
     eng2     = convert_to(first.get('member2', ''),         lang)
@@ -479,241 +452,147 @@ def save_all_in_one(groups: list, output_path: str,
     today    = datetime.now()
     date_str = first.get('doc_date', today.strftime('%d.%m.%Y'))
     try:
-        dt    = datetime.strptime(date_str, '%d.%m.%Y')
-        day   = str(dt.day)
-        month = M[dt.month]
-        year  = str(dt.year)
+        dt = datetime.strptime(date_str, '%d.%m.%Y')
+        day = str(dt.day); month = M[dt.month]; year = str(dt.year)
     except Exception:
-        day   = str(today.day)
-        month = M[today.month]
-        year  = str(today.year)
+        day = str(today.day); month = M[today.month]; year = str(today.year)
 
     doc = Document()
-    _set_margins(doc)
+    _set_landscape(doc)
     style = doc.styles['Normal']
     style.font.name = 'Times New Roman'
-    style.font.size = Pt(12)
+    style.font.size = Pt(10)
 
-    # ══ ШАПКА (единая) ══
-    hdr_tbl = doc.add_table(rows=1, cols=2)
-    hdr_tbl.alignment = WD_TABLE_ALIGNMENT.RIGHT
-    for cell in hdr_tbl.rows[0].cells:
-        tc = cell._tc; tcPr = tc.get_or_add_tcPr()
-        tcBorders = OxmlElement('w:tcBorders')
-        for edge in ('top','left','bottom','right'):
-            b = OxmlElement(f'w:{edge}')
-            b.set(qn('w:val'), 'none'); b.set(qn('w:sz'), '0')
-            b.set(qn('w:space'), '0'); b.set(qn('w:color'), 'auto')
-            tcBorders.append(b)
-        tcPr.append(tcBorders)
-    hdr_tbl.rows[0].cells[0].width = Cm(8)
-    hdr_tbl.rows[0].cells[1].width = Cm(9)
-    right_cell = hdr_tbl.rows[0].cells[1]
-    for p in list(right_cell.paragraphs):
-        p._element.getparent().remove(p._element)
-
-    def hdr_p(text, bold=False, size=11):
-        p = right_cell.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.paragraph_format.space_before = Pt(0)
-        p.paragraph_format.space_after  = Pt(1)
-        p.paragraph_format.line_spacing = Pt(14)
+    # ══ ШАПКА ══
+    p_hdr = doc.add_paragraph()
+    p_hdr.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p_hdr.paragraph_format.space_before = Pt(0)
+    p_hdr.paragraph_format.space_after  = Pt(0)
+    def rr(p, text, bold=False, size=10):
         r = p.add_run(text)
         r.bold = bold; r.font.size = Pt(size); r.font.name = 'Times New Roman'
+    rr(p_hdr, f'{T["tasdiq"]}\n', bold=True)
+    rr(p_hdr, f'{org_name}\n')
+    rr(p_hdr, f'___________ {boss}\n')
+    rr(p_hdr, f'{year} й. «_____»  ____________')
 
-    hdr_p(T['tasdiq'], bold=True, size=11)
-    org_rahbar = f'{org_name} {T["rahbar"]}'
-    if len(org_rahbar) > 40:
-        words = org_rahbar.split(); mid = len(words) // 2
-        hdr_p(' '.join(words[:mid]), size=10)
-        hdr_p(' '.join(words[mid:]), size=10)
-    else:
-        hdr_p(org_rahbar, size=10)
-    sign_p = right_cell.add_paragraph()
-    sign_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    sign_p.paragraph_format.space_before = Pt(2)
-    sign_p.paragraph_format.space_after  = Pt(1)
-    sign_p.paragraph_format.line_spacing = Pt(14)
-    for txt in ['________________  ', boss]:
-        r = sign_p.add_run(txt); r.font.size = Pt(10); r.font.name = 'Times New Roman'
-    hdr_p(f'«{day}» {month} {year} {T["yil"]}', size=10)
+    doc.add_paragraph().paragraph_format.space_after = Pt(4)
 
-    doc.add_paragraph().paragraph_format.space_after = Pt(2)
-    _hr(doc)
+    # ══ ЗАГОЛОВОК ══
+    _p(doc, T['title1'], bold=True, size=12,
+       align=WD_ALIGN_PARAGRAPH.CENTER, before=2, after=0)
+    _p(doc, f'№ 1 - СОН {T["title2"]}',
+       bold=True, size=12, align=WD_ALIGN_PARAGRAPH.CENTER, before=0, after=4)
 
-    # ══ ЗАГОЛОВОК (единый) ══
-    _p(doc, f'{T["title"]} 1',
-       bold=True, size=15, align=WD_ALIGN_PARAGRAPH.CENTER,
-       color=(0x2E, 0x40, 0x57), before=6, after=6)
-    subtitle = f'{org_name}  |  {region}' if region else org_name
-    _p(doc, subtitle, size=10, align=WD_ALIGN_PARAGRAPH.CENTER,
-       italic=True, after=8, color=(0x55, 0x55, 0x55))
+    # ══ ЕДИНАЯ ТАБЛИЦА ══
+    col_widths = [Cm(3.0), Cm(2.2), Cm(2.2), Cm(5.5), Cm(3.0),
+                  Cm(2.8), Cm(3.2), Cm(2.5), Cm(2.8)]
+    col_keys   = ['bulim','debet','kredit','nomi','narxi',
+                  'inv','amort','norma','qoldiq']
+    HDR_FILL   = '2E4057'
 
-    # ══ ВВОДНЫЙ ТЕКСТ (единый) ══
-    intro = doc.add_paragraph()
-    intro.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-    intro.paragraph_format.space_before = Pt(0)
-    intro.paragraph_format.space_after  = Pt(8)
-    intro.paragraph_format.line_spacing = Pt(16)
-    ir = intro.add_run('\t' + T['intro'].format(
-        org=org_name, region=region, eng1=eng1, eng2=eng2))
-    ir.font.size = Pt(12); ir.font.name = 'Times New Roman'
-
-    # ══ ЕДИНАЯ ТАБЛИЦА для всех групп ══
-    COL_WIDTHS   = [Cm(6.0), Cm(4.5), Cm(7.0)]
-    HEADER_COLOR = '2E4057'
-    EVEN_BG      = 'F0F4F8'
-    ODD_BG       = 'FFFFFF'
-    BAD_COLOR    = (0xC0, 0x39, 0x2B)
-    GOOD_COLOR   = (0x1E, 0x8B, 0x4C)
-
-    table = doc.add_table(rows=0, cols=3)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table = doc.add_table(rows=1, cols=len(col_widths))
     table.style = 'Table Grid'
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
 
-    # ── Заголовок колонок — ОДИН РАЗ ──
-    hdr_row = table.add_row()
-    hdr_row.height = Pt(22)
-    for ci, (cell, label, w) in enumerate(zip(
-            hdr_row.cells,
-            [T['col_qism'], T['col_yarоq'], T['col_nosoz']],
-            COL_WIDTHS)):
+    # Заголовок — один раз
+    hdr_row = table.rows[0]
+    hdr_row.height = Twips(900)
+    for ci, (w, key) in enumerate(zip(col_widths, col_keys)):
+        cell = hdr_row.cells[ci]
         cell.width = w
-        _set_cell_bg(cell, HEADER_COLOR)
-        _set_cell_border(cell, HEADER_COLOR)
+        _set_cell_bg(cell, HDR_FILL)
+        _set_cell_border(cell, HDR_FILL)
         cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-        p = cell.paragraphs[0]
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.paragraph_format.space_before = Pt(2)
-        p.paragraph_format.space_after  = Pt(2)
-        p.paragraph_format.line_spacing = Pt(13)
-        run = p.add_run(label)
-        run.bold = True; run.font.size = Pt(9); run.font.name = 'Times New Roman'
-        run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+        _cell_p(cell, T[key], bold=True, size=8,
+                align=WD_ALIGN_PARAGRAPH.CENTER, color=(255,255,255))
 
-    part_counter  = 0    # для чередования цветов строк
-    first_device  = True # флаг первого устройства (без пустой строки перед ним)
+    all_names = []
 
+    # Строки данных — по одной на каждую группу
     for group in groups:
-        inv     = group.get('inv_number', '')
-        devices = group.get('devices', [])
+        inv      = group.get('inv_number', '')
+        devices  = group.get('devices', [])
+        dev_names = [d.get('name','').strip() for d in devices if d.get('name','').strip()]
+        names_str = ', '.join(dev_names)
+        if names_str:
+            all_names.append(names_str)
 
-        for dev in devices:
-            dev_name = dev.get('name', '').strip()
-            parts    = dev.get('parts', [])
+        bulim_v  = convert_to(group.get('bulim', org_name), lang)
+        narxi    = group.get('narxi', '')
+        amort    = group.get('amort', '0.00')
+        norma    = group.get('norma', '')
+        qoldiq   = group.get('qoldiq', '0.00')
+        debet    = group.get('debet', '9210')
+        kredit   = group.get('kredit', '0150')
 
-            # ── Пустая строка-разделитель между устройствами ──
-            if not first_device:
-                sep_row = table.add_row()
-                sep_row.height = Pt(8)
-                for cell in sep_row.cells:
-                    _set_cell_bg(cell, 'FFFFFF')
-                    # Убираем границы разделительной строки
-                    tc = cell._tc; tcPr = tc.get_or_add_tcPr()
-                    tcBorders = OxmlElement('w:tcBorders')
-                    for edge in ('top', 'left', 'bottom', 'right'):
-                        b = OxmlElement(f'w:{edge}')
-                        b.set(qn('w:val'), 'none'); b.set(qn('w:sz'), '0')
-                        b.set(qn('w:space'), '0'); b.set(qn('w:color'), 'auto')
-                        tcBorders.append(b)
-                    tcPr.append(tcBorders)
-            first_device = False
-
-            # ── Строка названия устройства + инвентарный номер ──
-            title_row = table.add_row()
-            title_row.cells[0].merge(title_row.cells[1])
-            title_row.cells[0].merge(title_row.cells[2])
-            cell = title_row.cells[0]
-            _set_cell_bg(cell, 'D6EAF8')
-            _set_cell_border(cell, '2E4057')
+        data_row = table.add_row()
+        data_row.height = Twips(400)
+        row_values = [bulim_v, debet, kredit, names_str, narxi,
+                      inv, amort, norma, qoldiq]
+        for ci, (w, val) in enumerate(zip(col_widths, row_values)):
+            cell = data_row.cells[ci]
+            cell.width = w
+            _set_cell_border(cell)
             cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-            p_t = cell.paragraphs[0]
-            p_t.paragraph_format.space_before = Pt(3)
-            p_t.paragraph_format.space_after  = Pt(3)
-            for txt, bold, color in [
-                (f'{T["qurilma"]}  ', True,  (0x1A, 0x52, 0x76)),
-                (dev_name,           True,   None),
-                (f'     {T["inventar"]}  ', True, (0x1A, 0x52, 0x76)),
-                (inv,                True,   None),
-            ]:
-                r = p_t.add_run(txt)
-                r.bold = bold; r.font.size = Pt(11); r.font.name = 'Times New Roman'
-                if color: r.font.color.rgb = RGBColor(*color)
-
-            # Строки компонентов
-            for pi, part in enumerate(parts):
-                part_name = part.get('part_name', '')
-                condition = convert_to(part.get('condition', ''), lang)
-                defect    = convert_to(part.get('defect', ''),    lang)
-                is_bad    = any(w in condition.lower() for w in
-                               ('yaroqsiz', 'яроқсиз', 'yaramsiz'))
-
-                data_row = table.add_row()
-                data_row.height = Pt(20)
-                bg = EVEN_BG if part_counter % 2 == 0 else ODD_BG
-                part_counter += 1
-
-                for ci, (cell, val) in enumerate(zip(data_row.cells,
-                                                      [part_name, condition, defect])):
-                    _set_cell_bg(cell, bg)
-                    _set_cell_border(cell)
-                    cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-                    p = cell.paragraphs[0]
-                    p.alignment = (WD_ALIGN_PARAGRAPH.CENTER if ci == 1
-                                   else WD_ALIGN_PARAGRAPH.LEFT)
-                    p.paragraph_format.space_before = Pt(2)
-                    p.paragraph_format.space_after  = Pt(2)
-                    p.paragraph_format.line_spacing = Pt(13)
-                    run = p.add_run(val)
-                    run.font.size = Pt(10); run.font.name = 'Times New Roman'
-                    if ci == 1:
-                        if is_bad:
-                            run.font.color.rgb = RGBColor(*BAD_COLOR); run.bold = True
-                        else:
-                            run.font.color.rgb = RGBColor(*GOOD_COLOR)
+            _cell_p(cell, val, size=9,
+                    align=WD_ALIGN_PARAGRAPH.LEFT if ci in (0,3)
+                    else WD_ALIGN_PARAGRAPH.CENTER)
 
     doc.add_paragraph().paragraph_format.space_after = Pt(6)
 
-    # ══ XULOSA (единая) ══
-    _p(doc, T['xulosa'], bold=True, size=13,
-       align=WD_ALIGN_PARAGRAPH.CENTER,
-       color=(0x2E, 0x40, 0x57), before=6, after=4)
+    # ══ ЗАКЛЮЧЕНИЕ (единое) ══
+    order_info = first.get('order_info', '___')
+    comm_text  = T['komissiya'].format(org=org_name, date=year, order=order_info)
+    _p(doc, comm_text, size=10, before=0, after=2)
 
-    # Собираем все названия устройств из всех групп
-    all_dev_names = []
-    for group in groups:
-        for dev in group.get('devices', []):
-            name = dev.get('name', '').strip()
-            if name:
-                all_dev_names.append(f'«{name}»')
-    names_str = ', '.join(all_dev_names)
+    year_made  = first.get('year_made', '____')
+    year_arr   = first.get('year_arrived', '____')
+    year_start = first.get('year_started', '____')
+    for yr, key in [(year_made,'ish_chiq'),(year_arr,'kelgan'),(year_start,'ishga')]:
+        _p(doc, f'{yr} {T[key]}', size=10, before=0, after=1)
+    _p(doc, T['kapital'], size=10, before=0, after=1)
+    _p(doc, T['texnik'],  size=10, before=0, after=2)
 
-    for txt_key in ('xulosa1', 'xulosa2'):
-        xp = doc.add_paragraph()
-        xp.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        xp.paragraph_format.space_before = Pt(0)
-        xp.paragraph_format.space_after  = Pt(4)
-        xp.paragraph_format.line_spacing = Pt(16)
-        xr = xp.add_run('\t' + T[txt_key].format(names=names_str))
-        xr.font.size = Pt(12); xr.font.name = 'Times New Roman'
+    all_names_str = '; '.join(all_names)
+    xulosa = T['xulosa_txt'].format(
+        org=org_name, names=all_names_str,
+        date=year, day=day, month=month)
+    _p(doc, xulosa, size=10, before=0, after=6)
 
-    doc.add_paragraph().paragraph_format.space_after = Pt(10)
+    # ══ ПОДПИСИ ══
+    p_mod = doc.add_paragraph()
+    p_mod.paragraph_format.space_before = Pt(0)
+    p_mod.paragraph_format.space_after  = Pt(4)
+    r1 = p_mod.add_run(f'{T["moddiy"]}  _______________ ')
+    r1.font.size = Pt(10); r1.font.name = 'Times New Roman'
+    r2 = p_mod.add_run(boss)
+    r2.bold = True; r2.font.size = Pt(10); r2.font.name = 'Times New Roman'
 
-    # ══ ПОДПИСИ (единые) ══
-    sig_tbl = doc.add_table(rows=2, cols=3)
-    sig_tbl.alignment = WD_TABLE_ALIGNMENT.LEFT
-    for i, engineer in enumerate([eng1, eng2]):
-        row = sig_tbl.rows[i]
-        row.cells[0].width = Cm(5); row.cells[1].width = Cm(7); row.cells[2].width = Cm(5)
-        def sc(cell, text, bold=False):
-            p = cell.paragraphs[0]
-            p.paragraph_format.space_before = Pt(0)
-            p.paragraph_format.space_after  = Pt(8)
-            r = p.add_run(text); r.bold = bold
-            r.font.size = Pt(11); r.font.name = 'Times New Roman'
-        sc(row.cells[0], T['muhandis'], bold=True)
-        sc(row.cells[1], '______________________')
-        sc(row.cells[2], engineer)
+    p_rais = doc.add_paragraph()
+    p_rais.paragraph_format.space_before = Pt(0)
+    p_rais.paragraph_format.space_after  = Pt(3)
+    r1 = p_rais.add_run(f'{T["komrais"].format(org=org_name)}')
+    r1.font.size = Pt(10); r1.font.name = 'Times New Roman'
+    r2 = p_rais.add_run(f'                    _____________ {boss}')
+    r2.font.size = Pt(10); r2.font.name = 'Times New Roman'
+
+    p_az = doc.add_paragraph()
+    p_az.paragraph_format.space_before = Pt(0)
+    p_az.paragraph_format.space_after  = Pt(2)
+    rr_az = p_az.add_run(T['komazolari'])
+    rr_az.font.size = Pt(10); rr_az.font.name = 'Times New Roman'
+
+    for engineer in [eng1, eng2]:
+        if not engineer:
+            continue
+        p_e = doc.add_paragraph()
+        p_e.paragraph_format.space_before = Pt(0)
+        p_e.paragraph_format.space_after  = Pt(2)
+        r_t = p_e.add_run(f'{T["muhandis"]}                                           ____________')
+        r_t.font.size = Pt(10); r_t.font.name = 'Times New Roman'
+        r_n = p_e.add_run(engineer)
+        r_n.font.size = Pt(10); r_n.font.name = 'Times New Roman'
 
     doc.save(output_path)
     return output_path
