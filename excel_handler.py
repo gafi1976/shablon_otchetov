@@ -263,21 +263,23 @@ def read_ust_excel(path: str) -> dict:
     """
     Читает shablom_ust.xlsx.
 
-    ТОЧНАЯ структура колонок (по реальному файлу):
-      A(0)  = Data              — дата документа (акта)
-      B(1)  = {num_otch}        — порядковый номер строки
-      C(2)  = installation date — дата установки оборудования (отдельная для каждой строки)
+    ТОЧНАЯ структура колонок (единая для оригинала и сгенерированного шаблона):
+      A(0)  = Data              — дата документа
+      B(1)  = {num_otch}        — порядковый номер
+      C(2)  = installation date — дата установки (может быть пустой → берём из A)
       D(3)  = {oborud name}     — наименование/модель оборудования
       E(4)  = {serial num}      — серийный номер
       F(5)  = {where oborud}    — место установки
       G(6)  = {Organizasiya}    — организация
       H(7)  = {adress}          — адрес
-      I(8)  = пусто
-      J(9)  = {boss name}       — руководитель
-      K(10) = {engine1}         — инженер 1
-      L(11) = {job title1}      — должность инженера 1
-      M(12) = {engine2}         — инженер 2
-      N(13) = {job title2}      — должность инженера 2
+      I(8)  = {boss name}       — руководитель  ← был пропуск J в оригинале, теперь I
+      J(9)  = {engine1}         — инженер 1
+      K(10) = {job title1}      — должность 1
+      L(11) = {engine2}         — инженер 2
+      M(12) = {job title2}      — должность 2
+
+    СОВМЕСТИМОСТЬ с оригинальным shablom_ust.xlsx (пустая колонка I, данные с J):
+      Если в колонке I(8) пусто, а в J(9) есть данные — читаем boss из J(9).
     """
     rows = _read_xlsx_rows(path)
     if not rows:
@@ -290,59 +292,64 @@ def read_ust_excel(path: str) -> dict:
     job1      = ''
     eng2      = ''
     job2      = ''
-    doc_date  = ''   # дата акта — из колонки A первой строки данных
+    doc_date  = ''
     items     = []
 
     def _to_date(val: str) -> str:
-        """Конвертирует Excel serial number или строку в дд.мм.гггг."""
         if not val:
             return ''
         val = val.strip()
-        # Уже в формате дд.мм.гггг
         if len(val) == 10 and val[2] == '.' and val[5] == '.':
             return val
-        # Excel serial number
         if val.replace('.', '').isdigit() and '.' not in val:
             return _excel_date(val)
         return val
 
-    for row in rows[1:]:        # пропускаем строку 1 (заголовки)
+    for row in rows[1:]:
         if not row or not any(row):
             continue
 
-        raw_doc_date   = _s(row,  0)   # A: дата документа
-        num            = _s(row,  1)   # B: №
-        raw_inst_date  = _s(row,  2)   # C: дата установки (может быть пустой)
-        oborud         = _s(row,  3)   # D: модель оборудования
-        serial         = _s(row,  4)   # E: серийный номер
-        where          = _s(row,  5)   # F: место установки — ПРАВИЛЬНАЯ колонка
-        org            = _s(row,  6)   # G: организация
-        addr           = _s(row,  7)   # H: адрес
-        # I(8) = пусто
-        bss            = _s(row,  9)   # J: руководитель
-        e1             = _s(row, 10)   # K: инженер 1
-        j1             = _s(row, 11)   # L: должность 1
-        e2             = _s(row, 12)   # M: инженер 2
-        j2             = _s(row, 13)   # N: должность 2
+        raw_doc_date  = _s(row,  0)   # A
+        num           = _s(row,  1)   # B
+        raw_inst_date = _s(row,  2)   # C
+        oborud        = _s(row,  3)   # D
+        serial        = _s(row,  4)   # E
+        where         = _s(row,  5)   # F
+        org           = _s(row,  6)   # G
+        addr          = _s(row,  7)   # H
 
-        # Дата акта — из колонки A, берём из первой строки
+        # Совместимость: оригинал имеет пустую I и данные с J
+        # Сгенерированный шаблон имеет данные с I
+        col_i = _s(row,  8)   # I
+        col_j = _s(row,  9)   # J
+
+        if col_i:
+            # Сгенерированный шаблон: boss в I
+            bss = col_i
+            e1  = _s(row, 9)
+            j1  = _s(row, 10)
+            e2  = _s(row, 11)
+            j2  = _s(row, 12)
+        else:
+            # Оригинальный шаблон: I пустая, boss в J
+            bss = col_j
+            e1  = _s(row, 10)
+            j1  = _s(row, 11)
+            e2  = _s(row, 12)
+            j2  = _s(row, 13)
+
         if not doc_date and raw_doc_date:
             doc_date = _to_date(raw_doc_date)
 
-        # Дата установки — сначала из C, если пусто — из A
-        if raw_inst_date:
-            install_date = _to_date(raw_inst_date)
-        elif raw_doc_date:
-            install_date = _to_date(raw_doc_date)
-        else:
-            install_date = datetime.now().strftime('%d.%m.%Y')
+        install_date = (_to_date(raw_inst_date) if raw_inst_date
+                        else _to_date(raw_doc_date) if raw_doc_date
+                        else datetime.now().strftime('%d.%m.%Y'))
 
-        # Общие поля из первой заполненной строки
-        if not org_name and org:   org_name = org
-        if not address  and addr:  address  = addr
-        if not boss     and bss:   boss     = bss
-        if not eng1     and e1:    eng1 = e1; job1 = j1
-        if not eng2     and e2:    eng2 = e2; job2 = j2
+        if not org_name and org:  org_name = org
+        if not address  and addr: address  = addr
+        if not boss     and bss:  boss     = bss
+        if not eng1     and e1:   eng1 = e1; job1 = j1
+        if not eng2     and e2:   eng2 = e2; job2 = j2
 
         if not oborud:
             continue
