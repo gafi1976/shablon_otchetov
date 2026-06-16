@@ -132,15 +132,15 @@ def create_spisan_doc(group: dict, doc_number: str = '1',
     eng2     = convert_to(group.get('member2', ''),         lang)
     inv      = group.get('inv_number', '')
 
-    # Устройства и компоненты — названия НЕ конвертируем, Sabab (причина) — конвертируем
+    # Устройства и компоненты — названия НЕ конвертируем, Holat и Sabab — конвертируем
     devices = []
     for dev in group.get('devices', []):
         parts = []
         for p in dev.get('parts', []):
             parts.append({
-                'part_name': p.get('part_name', ''),                    # не конвертируем
-                'condition': p.get('condition', ''),                    # не конвертируем
-                'defect':    convert_to(p.get('defect', ''), lang),     # конвертируем
+                'part_name': p.get('part_name', ''),                     # не конвертируем
+                'condition': convert_to(p.get('condition', ''), lang),   # конвертируем
+                'defect':    convert_to(p.get('defect', ''),    lang),   # конвертируем
             })
         devices.append({
             'name':  dev.get('name', ''),   # не конвертируем
