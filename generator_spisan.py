@@ -571,7 +571,28 @@ def save_all_in_one(groups: list, output_path: str,
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.style = 'Table Grid'
 
-    part_counter = 0   # для чередования цветов строк
+    # ── Заголовок колонок — ОДИН РАЗ ──
+    hdr_row = table.add_row()
+    hdr_row.height = Pt(22)
+    for ci, (cell, label, w) in enumerate(zip(
+            hdr_row.cells,
+            [T['col_qism'], T['col_yarоq'], T['col_nosoz']],
+            COL_WIDTHS)):
+        cell.width = w
+        _set_cell_bg(cell, HEADER_COLOR)
+        _set_cell_border(cell, HEADER_COLOR)
+        cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+        p = cell.paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_before = Pt(2)
+        p.paragraph_format.space_after  = Pt(2)
+        p.paragraph_format.line_spacing = Pt(13)
+        run = p.add_run(label)
+        run.bold = True; run.font.size = Pt(9); run.font.name = 'Times New Roman'
+        run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+
+    part_counter  = 0    # для чередования цветов строк
+    first_device  = True # флаг первого устройства (без пустой строки перед ним)
 
     for group in groups:
         inv     = group.get('inv_number', '')
@@ -581,7 +602,24 @@ def save_all_in_one(groups: list, output_path: str,
             dev_name = dev.get('name', '').strip()
             parts    = dev.get('parts', [])
 
-            # Строка: Qurilma nomi + Inventar raqami
+            # ── Пустая строка-разделитель между устройствами ──
+            if not first_device:
+                sep_row = table.add_row()
+                sep_row.height = Pt(8)
+                for cell in sep_row.cells:
+                    _set_cell_bg(cell, 'FFFFFF')
+                    # Убираем границы разделительной строки
+                    tc = cell._tc; tcPr = tc.get_or_add_tcPr()
+                    tcBorders = OxmlElement('w:tcBorders')
+                    for edge in ('top', 'left', 'bottom', 'right'):
+                        b = OxmlElement(f'w:{edge}')
+                        b.set(qn('w:val'), 'none'); b.set(qn('w:sz'), '0')
+                        b.set(qn('w:space'), '0'); b.set(qn('w:color'), 'auto')
+                        tcBorders.append(b)
+                    tcPr.append(tcBorders)
+            first_device = False
+
+            # ── Строка названия устройства + инвентарный номер ──
             title_row = table.add_row()
             title_row.cells[0].merge(title_row.cells[1])
             title_row.cells[0].merge(title_row.cells[2])
@@ -601,26 +639,6 @@ def save_all_in_one(groups: list, output_path: str,
                 r = p_t.add_run(txt)
                 r.bold = bold; r.font.size = Pt(11); r.font.name = 'Times New Roman'
                 if color: r.font.color.rgb = RGBColor(*color)
-
-            # Заголовок колонок
-            hdr_row = table.add_row()
-            hdr_row.height = Pt(22)
-            for ci, (cell, label, w) in enumerate(zip(
-                    hdr_row.cells,
-                    [T['col_qism'], T['col_yarоq'], T['col_nosoz']],
-                    COL_WIDTHS)):
-                cell.width = w
-                _set_cell_bg(cell, HEADER_COLOR)
-                _set_cell_border(cell, HEADER_COLOR)
-                cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-                p = cell.paragraphs[0]
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                p.paragraph_format.space_before = Pt(2)
-                p.paragraph_format.space_after  = Pt(2)
-                p.paragraph_format.line_spacing = Pt(13)
-                run = p.add_run(label)
-                run.bold = True; run.font.size = Pt(9); run.font.name = 'Times New Roman'
-                run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
 
             # Строки компонентов
             for pi, part in enumerate(parts):
