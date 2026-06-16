@@ -363,6 +363,15 @@ def create_ust_doc(data: dict, doc_number: str = '1',
     return doc
 
 
+def _safe_filename(text: str) -> str:
+    """Убирает все символы недопустимые в имени файла Windows/Linux."""
+    text = text.replace('\n', '_').replace('\r', '').replace('\t', '_')
+    for ch in r'\/:*?"<>|':
+        text = text.replace(ch, '-')
+    text = '_'.join(text.split())
+    return text[:60] or 'doc'
+
+
 def save_single_files(data_list: list, output_dir: str,
                       lang: str = 'auto') -> list:
     """Один .docx на каждый item оборудования."""
@@ -378,10 +387,8 @@ def save_single_files(data_list: list, output_dir: str,
             continue
         for item in items:
             single_data = {**data, 'items': [item]}
-            num      = str(item.get('num', '')).strip()
-            name_raw = item.get('name', item.get('model', '')).strip()
-            safe     = ''.join(c if c.isalnum() or c in (' ', '-', '_') else '_'
-                               for c in name_raw).strip()[:40]
+            num  = str(item.get('num', '')).strip()
+            safe = _safe_filename(item.get('name', item.get('model', '')))
             fname = f'Dalolatnoma_{num}_{safe}.docx' if safe else f'Dalolatnoma_{num}.docx'
             path  = os.path.join(output_dir, fname)
             doc   = create_ust_doc(single_data,

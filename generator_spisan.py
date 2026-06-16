@@ -443,13 +443,25 @@ def create_spisan_doc(group: dict, doc_number: str = '1',
 #  Сохранение
 # ─────────────────────────────────────────────
 
+def _safe_filename(text: str) -> str:
+    """Убирает все символы недопустимые в имени файла Windows/Linux."""
+    # Заменяем переносы строк, табуляции и пробелы на подчёркивание
+    text = text.replace('\n', '_').replace('\r', '').replace('\t', '_')
+    # Убираем недопустимые символы Windows: \ / : * ? " < > |
+    for ch in r'\/:*?"<>|':
+        text = text.replace(ch, '-')
+    # Убираем лишние пробелы и подчёркивания
+    text = '_'.join(text.split())
+    return text[:60] or 'doc'  # максимум 60 символов
+
+
 def save_single_files(groups: list, output_dir: str,
                       lang: str = 'auto') -> list:
     """Один .docx на каждую группу (инвентарный номер)."""
     os.makedirs(output_dir, exist_ok=True)
     created = []
     for i, group in enumerate(groups, start=1):
-        inv  = group.get('inv_number', str(i)).replace('/', '-').replace('\\', '-')
+        inv  = _safe_filename(group.get('inv_number', str(i)))
         doc  = create_spisan_doc(group, doc_number=str(i), lang=lang)
         name = f'Texnik_Xulosa_{inv}.docx'
         path = os.path.join(output_dir, name)

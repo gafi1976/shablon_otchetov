@@ -250,11 +250,14 @@ def _read_sheet(path: str, sheet_index: int = 0) -> list:
 
 
 def _g(row: list, idx: int) -> str:
-    """Безопасно возвращает ячейку как строку."""
+    """Безопасно возвращает ячейку как строку, убирает переносы строк."""
     if idx >= len(row):
         return ''
     v = row[idx]
-    return str(v).strip() if v else ''
+    if not v:
+        return ''
+    # Убираем переносы строк из значений ячеек
+    return str(v).strip().replace('\n', ' ').replace('\r', '').replace('\t', ' ')
 
 
 def _to_date(val: str) -> str:
