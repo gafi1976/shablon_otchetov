@@ -141,21 +141,28 @@ def to_cyrillic(text: str) -> str:
         text
     )
 
-    # 3. В начале слова: ye → е,  e → э
-    beginning_rules = {
-        'ye': 'е', 'Ye': 'Е', 'YE': 'Е',
-        'e': 'э',  'E': 'Э',
-    }
+    # 3. В начале слова: e → э  (НЕ ye — оно уже обработано выше как е)
+    # Используем negative lookbehind чтобы не трогать уже конвертированное
     text = re.sub(
-        r'\b(%s)' % '|'.join(re.escape(k) for k in beginning_rules),
-        lambda m: beginning_rules[m.group(1)],
+        r'\b([Ee])\b',
+        lambda m: 'э' if m.group(1) == 'e' else 'Э',
+        text
+    )
+    # e в начале слова перед согласной → э
+    text = re.sub(
+        r'\b(e)([^euioayAEUIOY\u0400-\u04FF])',
+        lambda m: 'э' + m.group(2),
+        text
+    )
+    text = re.sub(
+        r'\b(E)([^euioayAEUIOY\u0400-\u04FF])',
+        lambda m: 'Э' + m.group(2),
         text
     )
 
-    # 4. После гласной: ye → е,  e → э
+    # 4. После гласной: e → э  (НЕ ye — уже обработано)
     after_vowel_rules = {
-        'ye': 'е', 'Ye': 'Е', 'YE': 'Е',
-        'e': 'э',  'E': 'Э',
+        'e': 'э', 'E': 'Э',
     }
     text = re.sub(
         r'(%s)(%s)' % (
