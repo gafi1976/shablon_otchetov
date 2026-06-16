@@ -193,8 +193,8 @@ def create_spisan_doc(group: dict, doc_number: str = '1',
     hdr_tbl.rows[0].cells[1].width = Cm(12)
     right_cell = hdr_tbl.rows[0].cells[1]
 
-    # Удаляем пустой параграф по умолчанию
-    for p in right_cell.paragraphs:
+    # Удаляем пустой параграф по умолчанию (безопасно — копируем список)
+    for p in list(right_cell.paragraphs):
         p._element.getparent().remove(p._element)
 
     def hdr_p(text, bold=False, size=11):

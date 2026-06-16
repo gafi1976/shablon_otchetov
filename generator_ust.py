@@ -187,7 +187,7 @@ def create_ust_doc(data: dict, doc_number: str = '1',
         return p
 
     # Удаляем пустой параграф который Word добавляет в ячейку по умолчанию
-    for p in right_cell.paragraphs:
+    for p in list(right_cell.paragraphs):
         p._element.getparent().remove(p._element)
 
     # «TASDIQLAYMAN» — жирный
