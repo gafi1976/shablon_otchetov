@@ -251,7 +251,8 @@ def create_spisan_doc(group: dict, doc_number: str = '1',
        bold=True, size=15, align=WD_ALIGN_PARAGRAPH.CENTER,
        color=(0x2E, 0x40, 0x57), before=6, after=6)
 
-    _p(doc, f'{org_name}  |  {region}',
+    subtitle = f'{org_name}  |  {region}' if region else org_name
+    _p(doc, subtitle,
        size=10, align=WD_ALIGN_PARAGRAPH.CENTER,
        italic=True, after=8, color=(0x55, 0x55, 0x55))
 
