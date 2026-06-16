@@ -310,26 +310,34 @@ def _get_sheet_index(path: str, sheet_name: str) -> int:
 
 def _detect_format(rows: list) -> str:
     """
-    Определяет формат файла по заголовкам строки 1.
-    Возвращает: 'new_spisan' | 'new_ust' | 'old_spisan' | 'old_ust' | 'unknown'
+    Определяет формат файла.
+    Новый shablon.xlsx: строка 1 = title (АКТ...), строка 2 = заголовки колонок.
+    Старые файлы: строка 1 = заголовки колонок, данные с строки 2.
     """
     if not rows:
         return 'unknown'
-    hdr = [_g(rows[0], i).lower() for i in range(min(15, len(rows[0])))]
-    joined = ' '.join(hdr)
 
-    # Новый формат — лист Spisaniye: A=Tashkilot, E=Inventar
-    if 'tashkilot' in joined and 'inventar' in joined and 'qurilma' in joined:
-        return 'new_spisan'
-    # Новый формат — лист Ustanovka: A=Tashkilot, I=Uskuna/Nom
-    if 'tashkilot' in joined and ('uskuna' in joined or 'joyi' in joined or 'sana' in joined):
-        return 'new_ust'
-    # Старый формат списания: A=Qurilma nomi, E=inv_num
-    if 'qurilma nomi' in joined or 'qurilma' in hdr[0]:
+    # Проверяем строку 0 (= строка 1 Excel) на наличие title нового шаблона
+    row0_text = ' '.join(_g(rows[0], i) for i in range(min(3, len(rows[0])))).lower()
+    is_new = any(w in row0_text for w in ('акт ', 'шаблон', 'akt ', 'shablon'))
+
+    # Для нового шаблона заголовки в строке 1 (index 1), для старого — в строке 0
+    hdr_row  = rows[1] if (is_new and len(rows) > 1) else rows[0]
+    hdr      = [_g(hdr_row, i).lower() for i in range(min(15, len(hdr_row)))]
+    joined   = ' '.join(hdr)
+
+    if is_new:
+        if 'inventar' in joined and ('qurilma' in joined or 'qism' in joined):
+            return 'new_spisan'
+        if 'uskuna' in joined or 'joyi' in joined or 'manzil' in joined:
+            return 'new_ust'
+
+    # Старые форматы
+    if 'qurilma nomi' in joined or (hdr and 'qurilma' in hdr[0]):
         return 'old_spisan'
-    # Старый формат установки: A=Data/{num_otch}
-    if 'data' in hdr[0] or '{num_otch}' in joined or 'installation' in joined:
+    if hdr and ('data' in hdr[0] or '{num_otch}' in joined or 'installation' in joined):
         return 'old_ust'
+
     return 'unknown'
 
 
@@ -367,13 +375,17 @@ def read_spisan_excel(path: str) -> list:
     fmt = _detect_format(rows)
 
     if fmt == 'new_spisan':
-        # Новый формат: заголовки в строке 1, данные с строки 2
-        return _parse_spisan_new(rows[1:])
+        # Строка 1 = title листа, строка 2 = заголовки колонок, данные с строки 3
+        return _parse_spisan_new(rows[2:])
     elif fmt == 'old_spisan':
-        # Старый формат: заголовки в строке 1, данные с строки 2
+        # Строка 1 = заголовки, данные с строки 2
         return _parse_spisan_old(rows[1:])
     else:
-        # Неизвестный формат — пробуем как новый
+        # Неизвестный — пробуем определить по строке 1
+        # Если строка 1 содержит цветной title (нет данных) — данные с строки 3
+        row0_vals = [_g(rows[0], i) for i in range(min(5, len(rows[0])))]
+        if all(not v or 'АКТ' in v or 'шаблон' in v.lower() for v in row0_vals if v):
+            return _parse_spisan_new(rows[2:])
         return _parse_spisan_new(rows[1:])
 
 
@@ -547,8 +559,10 @@ def read_ust_excel(path: str) -> dict:
     fmt = _detect_format(rows)
 
     if fmt in ('new_ust', 'new_spisan'):
-        return _parse_ust_new(rows[1:])
+        # Строка 1 = title листа, строка 2 = заголовки колонок, данные с строки 3
+        return _parse_ust_new(rows[2:])
     else:
+        # Старый формат: строка 1 = заголовки, данные с строки 2
         return _parse_ust_old(rows[1:])
 
 
