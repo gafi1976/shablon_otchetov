@@ -197,9 +197,10 @@ def create_ust_template(path: str) -> str:
 
 def _read_sheet(path: str, sheet_index: int = 0) -> list:
     """
-    Читает указанный лист xlsx-файла (по индексу).
+    Читает указанный лист xlsx-файла.
     Возвращает list строк; строка 0 = строка 1 Excel.
-    Каждая строка — list строковых значений ячеек.
+    Каждая строка — dict {col_index: value} ИЛИ list с правильными позициями.
+    Пустые ячейки = '' на правильном месте (не сжимает).
     """
     with zipfile.ZipFile(path) as z:
         names = z.namelist()
@@ -221,32 +222,39 @@ def _read_sheet(path: str, sheet_index: int = 0) -> list:
         if not all_rows:
             return []
 
-        def coln(ref: str) -> int:
+        def col_letter_to_num(ref: str) -> int:
+            """A→1, B→2, AA→27 и т.д."""
             col = ''.join(c for c in ref if c.isalpha())
             n = 0
             for ch in col.upper():
                 n = n * 26 + (ord(ch) - ord('A') + 1)
-            return n
+            return n - 1   # 0-based
 
         max_row = max(int(r.get('r', 0)) for r in all_rows)
-        result  = [[] for _ in range(max_row + 1)]
+        # Находим максимальную колонку по всему листу
+        max_col = 0
+        for row_el in all_rows:
+            for c in row_el.findall('n:c', ns):
+                ci = col_letter_to_num(c.get('r', 'A1'))
+                if ci > max_col:
+                    max_col = ci
+
+        result = [[] for _ in range(max_row + 1)]
 
         for row_el in all_rows:
-            rn    = int(row_el.get('r', 0))
-            cells = row_el.findall('n:c', ns)
-            if not cells:
-                continue
-            mc  = max(coln(c.get('r', 'A')) for c in cells)
-            row = [''] * mc
-            for c in cells:
-                ci = coln(c.get('r', 'A1')) - 1
+            rn = int(row_el.get('r', 0))
+            row = [''] * (max_col + 1)   # правильный размер с пустыми
+            for c in row_el.findall('n:c', ns):
+                ci = col_letter_to_num(c.get('r', 'A1'))
                 t  = c.get('t', '')
                 v  = c.find('n:v', ns)
                 if v is not None and v.text is not None:
                     row[ci] = strings[int(v.text)] if t == 's' else v.text
+                else:
+                    row[ci] = ''
             result[rn] = row
 
-        return result[1:]   # индекс 0 пустой; result[0] = строка 1 Excel
+        return result[1:]   # индекс 0 пустой
 
 
 def _g(row: list, idx: int) -> str:
