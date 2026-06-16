@@ -247,7 +247,7 @@ def _build_doc(groups: list, doc_number: str, lang: str) -> Document:
                   Cm(2.8), Cm(3.2), Cm(2.2), Cm(2.8)]
     col_keys   = ['bulim','debet','kredit','nomi','narxi',
                   'inv','amort','norma','qoldiq']
-    HDR_FILL   = '2E4057'
+    HDR_FILL   = 'FFFFFF'
 
     table = doc.add_table(rows=1, cols=len(col_widths))
     table.style = 'Table Grid'
@@ -259,11 +259,10 @@ def _build_doc(groups: list, doc_number: str, lang: str) -> Document:
     for ci, (w, key) in enumerate(zip(col_widths, col_keys)):
         cell = hdr_row.cells[ci]
         cell.width = w
-        _set_cell_bg(cell, HDR_FILL)
-        _set_cell_border(cell, HDR_FILL)
+        _set_cell_border(cell, '333333')
         cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
         _cell_p(cell, T[key], bold=True, size=8,
-                align=WD_ALIGN_PARAGRAPH.CENTER, color=(255, 255, 255))
+                align=WD_ALIGN_PARAGRAPH.CENTER)
 
     # Строки данных — по одной на каждую группу
     all_names  = []
