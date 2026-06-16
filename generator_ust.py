@@ -339,27 +339,6 @@ def create_ust_doc(data: dict, doc_number: str = '1',
         sc(row.cells[1], '________________________')
         sc(row.cells[2], engineer)
 
-    # Нижняя линия
-    doc.add_paragraph().paragraph_format.space_after = Pt(4)
-    p_foot = doc.add_paragraph()
-    p_foot.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    pPr = p_foot._p.get_or_add_pPr()
-    pBdr = OxmlElement('w:pBdr')
-    top_e = OxmlElement('w:top')
-    top_e.set(qn('w:val'), 'single')
-    top_e.set(qn('w:sz'), '12')
-    top_e.set(qn('w:space'), '1')
-    top_e.set(qn('w:color'), '1A5276')
-    pBdr.append(top_e)
-    pPr.append(pBdr)
-    fr = p_foot.add_run(
-        f"{T['mp']}   {T['dalolatnoma']}{num_otch}   |   {T['sana']} {date_str}"
-    )
-    fr.font.size = Pt(9)
-    fr.font.name = 'Times New Roman'
-    fr.italic = True
-    fr.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
-
     return doc
 
 
