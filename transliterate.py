@@ -298,6 +298,7 @@ def convert_dict(data: dict, target: str, keys: list = None) -> dict:
 TEXTS_SPISAN = {
     'latin': {
         'tasdiq':    "«TASDIQLAYMAN»",
+        'rahbar':    "rahbari",
         'yil':       "yil",
         'title':     "TEXNIK XULOSA №",
         'intro':     "Biz, quyida imzo chekuvchilar — {org} {region} bo\u02bblim "
@@ -322,6 +323,7 @@ TEXTS_SPISAN = {
     },
     'cyrillic': {
         'tasdiq':    "«ТАСДИҚЛАНДИ»",
+        'rahbar':    "раҳбари",
         'yil':       "йил",
         'title':     "ТЕХНИК ХУЛОСА №",
         'intro':     "Биз, қуйида имзо чекувчилар — {org} {region} бўлим "

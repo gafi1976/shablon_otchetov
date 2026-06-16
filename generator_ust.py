@@ -175,7 +175,7 @@ def create_ust_doc(data: dict, doc_number: str = '1',
     def hdr_p(text, bold=False, size=11, underline=False):
         """Добавляет строку в правую ячейку шапки."""
         p = right_cell.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after  = Pt(1)
         p.paragraph_format.line_spacing = Pt(14)
@@ -193,22 +193,19 @@ def create_ust_doc(data: dict, doc_number: str = '1',
     # «TASDIQLAYMAN» — жирный
     hdr_p(T['tasdiq'], bold=True, size=11)
 
-    # Организация rahbari — перенос если длинная строка
+    # Организация + rahbari — перенос если длинная строка
     org_rahbar = f'{org_name} {T["rahbar"]}'
-    # Разбиваем по словам если больше ~45 символов
-    if len(org_rahbar) > 45:
+    if len(org_rahbar) > 40:
         words = org_rahbar.split()
         mid   = len(words) // 2
-        line1 = ' '.join(words[:mid])
-        line2 = ' '.join(words[mid:])
-        hdr_p(line1, size=10)
-        hdr_p(line2, size=10)
+        hdr_p(' '.join(words[:mid]), size=10)
+        hdr_p(' '.join(words[mid:]), size=10)
     else:
         hdr_p(org_rahbar, size=10)
 
     # Подпись: линия + ФИО
     sign_p = right_cell.add_paragraph()
-    sign_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    sign_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     sign_p.paragraph_format.space_before = Pt(2)
     sign_p.paragraph_format.space_after  = Pt(1)
     sign_p.paragraph_format.line_spacing = Pt(14)

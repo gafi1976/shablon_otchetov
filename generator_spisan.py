@@ -199,7 +199,7 @@ def create_spisan_doc(group: dict, doc_number: str = '1',
 
     def hdr_p(text, bold=False, size=11):
         p = right_cell.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after  = Pt(1)
         p.paragraph_format.line_spacing = Pt(14)
@@ -213,8 +213,10 @@ def create_spisan_doc(group: dict, doc_number: str = '1',
     hdr_p(T['tasdiq'], bold=True, size=11)
 
     # Организация + должность — разбиваем на 2 строки если длинно
-    org_rahbar = f'{org_name} {T["rahbar"]}'
-    if len(org_rahbar) > 45:
+    # В TEXTS_SPISAN нет 'rahbar' — используем должность из данных или пустую строку
+    rahbar_title = T.get('rahbar', '')
+    org_rahbar = f'{org_name} {rahbar_title}'.strip() if rahbar_title else org_name
+    if len(org_rahbar) > 40:
         words = org_rahbar.split()
         mid   = len(words) // 2
         hdr_p(' '.join(words[:mid]), size=10)
@@ -224,7 +226,7 @@ def create_spisan_doc(group: dict, doc_number: str = '1',
 
     # Линия подписи + ФИО
     sign_p = right_cell.add_paragraph()
-    sign_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    sign_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     sign_p.paragraph_format.space_before = Pt(2)
     sign_p.paragraph_format.space_after  = Pt(1)
     sign_p.paragraph_format.line_spacing = Pt(14)
