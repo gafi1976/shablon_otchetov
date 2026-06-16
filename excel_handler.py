@@ -1,199 +1,363 @@
 # excel_handler.py
-# Чтение реальных Excel шаблонов и создание новых шаблонов
+# Создание и чтение Excel шаблонов для актов СПИСАНИЯ и УСТАНОВКИ
 #
-# ═══════════════════════════════════════════════════
-#  СТРУКТУРА shablon_spisan.xlsx / shablon.xlsx
-# ═══════════════════════════════════════════════════
-#  Строка 1 — заголовки:
-#    A: Qurilma nomi          — название оборудования
-#    B: Qismlar nomi          — компонент
-#    C: Foydalanishga yaroqliligi — состояние
-#    D: Nosozlik belgilari    — неисправность
-#    E: Inventar raqami       — инвентарный номер  ← ключ группировки
-#    F: Tashilot nomi         — организация
-#    G: {boss name}           — руководитель
-#    H: {enginer1}            — инженер 1
-#    I: {enginer2}            — инженер 2
-#  Пустые строки между группами — разделители.
+# ════════════════════════════════════════════════════════════
+#  ФОРМАТ ШАБЛОНА СПИСАНИЯ (shablon_spisan.xlsx)
+# ════════════════════════════════════════════════════════════
+#  Строка 1 — ЗАГОЛОВКИ:
+#   A: Tashkilot        — Организация
+#   B: Rahbar           — Руководитель (ФИО)
+#   C: Muhandis1        — Инженер 1 (ФИО)
+#   D: Muhandis2        — Инженер 2 (ФИО)
+#   E: Inventar         — Инвентарный номер  ← ключ группировки
+#   F: Qurilma          — Название оборудования
+#   G: Qism             — Компонент
+#   H: Holat            — Состояние (Yaroqli / Yaroqsiz)
+#   I: Sabab            — Причина / неисправность
 #
-# ═══════════════════════════════════════════════════
-#  СТРУКТУРА shablom_ust.xlsx
-# ═══════════════════════════════════════════════════
-#  Строка 1 — заголовки:
-#    A: Data                  — дата
-#    B: {num_otch}            — № строки
-#    C: {oborud name}         — модель оборудования
-#    D: serial num            — серийный номер
-#    E: (пусто / inv)
-#    F: {where oborud}        — место установки
-#    G: {Organizasiya}        — организация
-#    H: {adress}              — адрес
-#    I: {boss name}           — руководитель
-#    J: {engine1}             — инженер 1
-#    K: {job title1}          — должность 1
-#    L: {engine2}             — инженер 2
-#    M: {job title2}          — должность 2
-# ═══════════════════════════════════════════════════
+#  Строки 2+ — данные. Пустые строки игнорируются.
+#  Группировка по E (Inventar) → один Word файл на инв. номер.
+#
+# ════════════════════════════════════════════════════════════
+#  ФОРМАТ ШАБЛОНА УСТАНОВКИ (shablom_ust.xlsx)
+# ════════════════════════════════════════════════════════════
+#  Строка 1 — ЗАГОЛОВКИ:
+#   A: Tashkilot        — Организация
+#   B: Manzil           — Адрес
+#   C: Rahbar           — Руководитель (ФИО)
+#   D: Muhandis1        — Инженер 1 (ФИО)
+#   E: Lavozim1         — Должность инженера 1
+#   F: Muhandis2        — Инженер 2 (ФИО)
+#   G: Lavozim2         — Должность инженера 2
+#   H: Sana             — Дата установки (дд.мм.гггг)
+#   I: Nom              — Наименование оборудования / модель
+#   J: Seriya           — Серийный номер
+#   K: Joyi             — Место установки
+#
+#  Строки 2+ — данные. Каждая строка = одна единица оборудования.
+# ════════════════════════════════════════════════════════════
 
 import os
 import zipfile
 import xml.etree.ElementTree as ET
 from datetime import datetime, date, timedelta
+
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.worksheet.datavalidation import DataValidation
 
 
-# ──────────────────────────────────────────────
-#  Низкоуровневый читатель xlsx через ZIP+XML
-#  (работает без pandas, только stdlib)
-# ──────────────────────────────────────────────
+# ─── Стили ──────────────────────────────────────────────────
 
-def _read_xlsx_rows(path: str) -> list:
-    """
-    Читает первый лист xlsx и возвращает список строк (list of list of str).
-    Индекс 0 = строка 1 в Excel.
-    Пустые строки возвращаются как [].
-    """
+_HDR_S   = PatternFill('solid', fgColor='2E4057')
+_HDR_U   = PatternFill('solid', fgColor='1A5276')
+_HFONT   = Font(name='Times New Roman', bold=True, color='FFFFFF', size=10)
+_DFONT   = Font(name='Times New Roman', size=10)
+_RFONT_S = Font(name='Times New Roman', size=10, color='C0392B', bold=True)
+_RFONT_G = Font(name='Times New Roman', size=10, color='1E8B4C', bold=True)
+_CTR     = Alignment(horizontal='center', vertical='center', wrap_text=True)
+_LFT     = Alignment(horizontal='left',   vertical='center', wrap_text=True)
+_ES      = PatternFill('solid', fgColor='F0F4F8')
+_EU      = PatternFill('solid', fgColor='EBF5FB')
+_ODD     = PatternFill('solid', fgColor='FFFFFF')
+
+
+def _brd(color='2E4057'):
+    s = Side(style='thin', color=color)
+    return Border(left=s, right=s, top=s, bottom=s)
+
+
+def _title_row(ws, text, ncols, fill_color):
+    """Строка-заголовок листа (строка 1)."""
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
+    cell = ws.cell(row=1, column=1, value=text)
+    cell.font      = Font(name='Times New Roman', bold=True, size=13, color='FFFFFF')
+    cell.fill      = PatternFill('solid', fgColor=fill_color)
+    cell.alignment = _CTR
+    ws.row_dimensions[1].height = 24
+
+
+def _header_row(ws, headers, hdr_fill, row=2):
+    """Строка заголовков колонок."""
+    ws.row_dimensions[row].height = 36
+    for ci, (text, width) in enumerate(headers, start=1):
+        from openpyxl.utils import get_column_letter
+        ws.column_dimensions[get_column_letter(ci)].width = width
+        cell = ws.cell(row=row, column=ci, value=text)
+        cell.font = _HFONT; cell.fill = hdr_fill
+        cell.alignment = _CTR; cell.border = _brd()
+
+
+# ════════════════════════════════════════════════════════════
+#  СОЗДАНИЕ ШАБЛОНА СПИСАНИЯ
+# ════════════════════════════════════════════════════════════
+
+def create_spisan_template(path: str) -> str:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Spisaniye'
+    ws.sheet_view.showGridLines = False
+
+    _title_row(ws, 'АКТ СПИСАНИЯ — шаблон данных', 9, '2E4057')
+
+    headers = [
+        ('Tashkilot\n(Организация)',          28),
+        ('Rahbar\n(Руководитель)',             22),
+        ('Muhandis 1\n(Инженер 1)',            22),
+        ('Muhandis 2\n(Инженер 2)',            22),
+        ('Inventar ★\n(Инв. номер)',           16),
+        ('Qurilma nomi\n(Оборудование)',       26),
+        ('Qism nomi\n(Компонент)',             22),
+        ('Holat\n(Yaroqli/Yaroqsiz)',          16),
+        ('Nosozlik sababi\n(Причина)',         26),
+    ]
+    _header_row(ws, headers, _HDR_S)
+
+    # Валидация для колонки H
+    dv = DataValidation(type='list', formula1='"Yaroqli,Yaroqsiz"',
+                        allow_blank=True, showDropDown=False)
+    dv.sqref = 'H3:H500'
+    ws.add_data_validation(dv)
+
+    # Примеры данных (строки 3+)
+    ORG = 'ABM Sirdaryo viloyati MChJ'
+    B   = 'Palonov P.A'
+    E1  = 'Raxmatov V.A'
+    E2  = 'Xolbekov G.T'
+    rows = [
+        (ORG, B, E1, E2, '26-0006039', 'Server HP ML350',        'Asosiy plata', 'Yaroqli',  "Ma'naviy eskirgan"),
+        (ORG, B, E1, E2, '26-0006039', 'Server HP ML350',        'Tok manbayi',  'Yaroqli',  "Ma'naviy eskirgan"),
+        (ORG, B, E1, E2, '26-0006039', 'Server HP ML350',        'Qattiq disk',  'Yaroqsiz', 'BAD bloklar mavjud'),
+        (ORG, B, E1, E2, '24-0006162', 'Konditsioner ART-12HI',  'Tok manbai',   'Yaroqsiz', "Tok sarfi ko'p"),
+        (ORG, B, E1, E2, '24-0006162', 'Konditsioner ART-12HI',  'Kompressor',   'Yaroqsiz', 'Shovqin mavjud'),
+        (ORG, B, E1, E2, '24-0006162', 'Konditsioner ART-12HI',  'Radiator',     'Yaroqsiz', 'Yamalgan'),
+        (ORG, B, E1, E2, '26-0003436', "Monitor LCD 19''",       'Asosiy plata', 'Yaroqsiz', 'Korpus singan'),
+        (ORG, B, E1, E2, '26-0003436', "Monitor LCD 19''",       'Tok manbayi',  'Yaroqsiz', 'Kuygan'),
+    ]
+
+    for ri, row in enumerate(rows):
+        rn   = ri + 3
+        fill = _ES if ri % 2 == 0 else _ODD
+        ws.row_dimensions[rn].height = 18
+        for ci, val in enumerate(row, start=1):
+            cell = ws.cell(row=rn, column=ci, value=val)
+            cell.fill = fill; cell.border = _brd()
+            cell.alignment = _CTR if ci in (5, 8) else _LFT
+            if ci == 8:
+                cell.font = _RFONT_S if val == 'Yaroqsiz' else _RFONT_G
+            else:
+                cell.font = _DFONT
+
+    # 20 пустых строк
+    for ri in range(len(rows), len(rows) + 20):
+        rn   = ri + 3
+        fill = _ES if ri % 2 == 0 else _ODD
+        ws.row_dimensions[rn].height = 18
+        for ci in range(1, 10):
+            cell = ws.cell(row=rn, column=ci)
+            cell.font = _DFONT; cell.fill = fill
+            cell.border = _brd(); cell.alignment = _LFT
+
+    # Инструкция
+    ir = len(rows) + 24
+    ws.merge_cells(start_row=ir, start_column=1, end_row=ir, end_column=9)
+    c = ws.cell(row=ir, column=1,
+        value='★ Каждая строка = один компонент. '
+              'Группировка в Word-файл по колонке E (Inventar). '
+              'Holat: Yaroqli = исправен, Yaroqsiz = неисправен.')
+    c.font = Font(name='Times New Roman', italic=True, size=9, color='888888')
+    c.alignment = _LFT
+    ws.row_dimensions[ir].height = 16
+
+    ws.freeze_panes = 'A3'
+    wb.save(path)
+    return path
+
+
+# ════════════════════════════════════════════════════════════
+#  СОЗДАНИЕ ШАБЛОНА УСТАНОВКИ
+# ════════════════════════════════════════════════════════════
+
+def create_ust_template(path: str) -> str:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Ustanovka'
+    ws.sheet_view.showGridLines = False
+
+    _title_row(ws, 'АКТ УСТАНОВКИ — шаблон данных', 11, '1A5276')
+
+    today = datetime.now().strftime('%d.%m.%Y')
+    headers = [
+        ('Tashkilot\n(Организация)',             28),
+        ('Manzil\n(Адрес)',                       22),
+        ('Rahbar\n(Руководитель)',                22),
+        ('Muhandis 1\n(Инженер 1)',               22),
+        ('Lavozim 1\n(Должность 1)',              18),
+        ('Muhandis 2\n(Инженер 2)',               22),
+        ('Lavozim 2\n(Должность 2)',              18),
+        ('Sana\n(Дата  дд.мм.гггг)',              16),
+        ('Uskuna nomi\n(Оборудование / Модель)',  26),
+        ('Seriya raqami\n(Серийный номер)',        18),
+        ("O'rnatish joyi\n(Место установки)",     22),
+    ]
+    _header_row(ws, headers, _HDR_U)
+
+    ORG  = 'ABM Sirdaryo viloyati MChJ'
+    ADDR = "Guliston sh., O'zbekiston ko'ch."
+    B    = 'Palonov P.A'
+    E1   = 'Raxmatov V.A';  L1 = 'Yetakchi muhandis'
+    E2   = 'Xolbekov G.T';  L2 = 'Yetakchi muhandis'
+    rows = [
+        (ORG, ADDR, B, E1, L1, E2, L2, today, 'Maipu MP1900X-22',   'SN-001', 'Guliston, 1-bino'),
+        (ORG, ADDR, B, E1, L1, E2, L2, today, 'Maipu MP1900X-22',   'SN-002', 'Guliston, 2-bino'),
+        (ORG, ADDR, B, E1, L1, E2, L2, today, 'Switch Cisco SG350', 'SN-003', 'Guliston, 3-bino'),
+        (ORG, ADDR, B, E1, L1, E2, L2, today, 'UPS APC 1500VA',     'SN-004', 'Server xona'),
+    ]
+
+    for ri, row in enumerate(rows):
+        rn   = ri + 3
+        fill = _EU if ri % 2 == 0 else _ODD
+        ws.row_dimensions[rn].height = 20
+        for ci, val in enumerate(row, start=1):
+            cell = ws.cell(row=rn, column=ci, value=val)
+            cell.font = _DFONT; cell.fill = fill
+            cell.border = _brd('1A5276')
+            cell.alignment = _CTR if ci == 8 else _LFT
+
+    for ri in range(len(rows), len(rows) + 20):
+        rn   = ri + 3
+        fill = _EU if ri % 2 == 0 else _ODD
+        ws.row_dimensions[rn].height = 20
+        for ci in range(1, 12):
+            cell = ws.cell(row=rn, column=ci)
+            cell.font = _DFONT; cell.fill = fill
+            cell.border = _brd('1A5276'); cell.alignment = _LFT
+
+    ir = len(rows) + 24
+    ws.merge_cells(start_row=ir, start_column=1, end_row=ir, end_column=11)
+    c = ws.cell(row=ir, column=1,
+        value='Каждая строка = одна единица оборудования. '
+              'Общие поля (организация, руководитель, инженеры) '
+              'одинаковы для всех строк. Дата: дд.мм.гггг.')
+    c.font = Font(name='Times New Roman', italic=True, size=9, color='888888')
+    c.alignment = _LFT
+    ws.row_dimensions[ir].height = 16
+
+    ws.freeze_panes = 'A3'
+    wb.save(path)
+    return path
+
+
+# ════════════════════════════════════════════════════════════
+#  НИЗКОУРОВНЕВЫЙ ЧИТАТЕЛЬ xlsx (stdlib, без pandas)
+# ════════════════════════════════════════════════════════════
+
+def _read_rows(path: str) -> list:
+    """Возвращает список строк начиная с индекса 0 = строка 1 Excel."""
     with zipfile.ZipFile(path) as z:
-        names = z.namelist()
-
-        # Shared strings
         strings = []
-        if 'xl/sharedStrings.xml' in names:
-            ns = {'ns': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
-            tree = ET.parse(z.open('xl/sharedStrings.xml'))
-            for si in tree.findall('.//ns:si', ns):
-                t = ''.join(n.text or '' for n in si.findall('.//ns:t', ns))
-                strings.append(t)
+        if 'xl/sharedStrings.xml' in z.namelist():
+            ns = {'n': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+            for si in ET.parse(z.open('xl/sharedStrings.xml')).findall('.//n:si', ns):
+                strings.append(''.join(t.text or '' for t in si.findall('.//n:t', ns)))
 
-        # Первый лист
-        sheets = sorted(f for f in names if f.startswith('xl/worksheets/sheet'))
+        sheets = sorted(f for f in z.namelist() if f.startswith('xl/worksheets/sheet'))
         if not sheets:
             return []
 
-        ns = {'ns': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
-        tree = ET.parse(z.open(sheets[0]))
-        all_rows = tree.findall('.//ns:row', ns)
+        ns = {'n': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+        all_rows = ET.parse(z.open(sheets[0])).findall('.//n:row', ns)
+        if not all_rows:
+            return []
 
-        def col_num(ref: str) -> int:
+        def coln(ref):
             col = ''.join(c for c in ref if c.isalpha())
             n = 0
             for ch in col.upper():
                 n = n * 26 + (ord(ch) - ord('A') + 1)
             return n
 
-        # Максимальный номер строки
-        max_row = max((int(r.get('r', 0)) for r in all_rows), default=0)
-        result = [[] for _ in range(max_row + 1)]
+        max_row = max(int(r.get('r', 0)) for r in all_rows)
+        result  = [[] for _ in range(max_row + 1)]
 
         for row_el in all_rows:
-            row_num = int(row_el.get('r', 0))
-            cells = row_el.findall('ns:c', ns)
+            rn    = int(row_el.get('r', 0))
+            cells = row_el.findall('n:c', ns)
             if not cells:
-                result[row_num] = []
                 continue
-
-            max_col = max(col_num(c.get('r', 'A')) for c in cells)
-            row_vals = [''] * max_col
-
+            mc  = max(coln(c.get('r', 'A')) for c in cells)
+            row = [''] * mc
             for c in cells:
-                ref = c.get('r', 'A1')
-                ci  = col_num(ref) - 1
-                t   = c.get('t', '')
-                v_el = c.find('ns:v', ns)
-                if v_el is not None and v_el.text is not None:
-                    if t == 's':
-                        idx = int(v_el.text)
-                        row_vals[ci] = strings[idx] if idx < len(strings) else ''
-                    else:
-                        row_vals[ci] = v_el.text
-                else:
-                    row_vals[ci] = ''
+                ci = coln(c.get('r', 'A1')) - 1
+                t  = c.get('t', '')
+                v  = c.find('n:v', ns)
+                if v is not None and v.text is not None:
+                    row[ci] = strings[int(v.text)] if t == 's' else v.text
+            result[rn] = row
 
-            result[row_num] = row_vals
-
-        return result[1:]   # убираем нулевой индекс, возвращаем с 0 = строка 1
+        return result[1:]   # result[0] пустой, возвращаем с row=1
 
 
-def _s(row: list, idx: int) -> str:
-    """Безопасно получает строковое значение ячейки."""
-    return str(row[idx]).strip() if idx < len(row) and row[idx] else ''
+def _g(row, idx):
+    """Безопасно возвращает строку из строки по индексу."""
+    v = row[idx] if idx < len(row) else ''
+    return str(v).strip() if v else ''
 
 
-def _excel_date(val: str) -> str:
-    """Конвертирует числовую дату Excel в строку дд.мм.гггг."""
+def _to_date(val: str) -> str:
+    """Excel serial → дд.мм.гггг или оставляет строку как есть."""
+    if not val:
+        return ''
+    val = val.strip()
+    if len(val) == 10 and val[2] == '.' and val[5] == '.':
+        return val
     try:
         n = float(val)
-        d = date(1899, 12, 30) + timedelta(days=int(n))
-        return d.strftime('%d.%m.%Y')
-    except Exception:
-        return str(val).strip()
+        if n > 1000:
+            return (date(1899, 12, 30) + timedelta(days=int(n))).strftime('%d.%m.%Y')
+    except ValueError:
+        pass
+    return val
 
 
-# ══════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════
 #  ЧТЕНИЕ ШАБЛОНА СПИСАНИЯ
-#  → список групп, сгруппированных по Inventar raqami
-#  → каждая группа = один Word файл
-# ══════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════
 
 def read_spisan_excel(path: str) -> list:
     """
-    Читает shablon_spisan.xlsx / shablon.xlsx.
-
-    Возвращает список групп (list of dict), где каждая группа
-    соответствует одному инвентарному номеру и передаётся в
-    generator_spisan.create_spisan_doc().
-
-    Структура одной группы:
-    {
-        'inv_number':      str,
-        'org_name':        str,
-        'region':          str,   # пустая — задаётся вручную
-        'doc_date':        str,   # дд.мм.гггг (сегодня)
-        'commission_head': str,
-        'member1':         str,
-        'member2':         str,
-        'devices': [
-            {
-                'name':  str,
-                'parts': [
-                    {'part_name': str, 'condition': str, 'defect': str}
-                ]
-            }
-        ]
-    }
+    Читает shablon_spisan.xlsx.
+    Колонки: A=Tashkilot, B=Rahbar, C=Muhandis1, D=Muhandis2,
+             E=Inventar★, F=Qurilma, G=Qism, H=Holat, I=Sabab
+    Строка 1 = заголовки, данные с строки 2.
+    Возвращает список групп (dict) по инвентарному номеру.
     """
-    rows = _read_xlsx_rows(path)
+    rows = _read_rows(path)
     if not rows:
-        raise ValueError(f'Файл пуст или не читается: {path}')
+        raise ValueError(f'Файл пуст: {path}')
 
-    # Строка 0 — заголовки, пропускаем
-    # Группируем: inv_number → {org, boss, eng1, eng2, devices: {name → parts}}
+    inv_data   = {}   # inv → dict
+    inv_order  = []
 
-    inv_groups   = {}   # {inv_number: dict}
-    inv_order    = []   # сохраняем порядок инвентарных номеров
-
-    for row in rows[2:]:            # строка 1=title, строка 2=заголовки, данные с строки 3
+    for row in rows[1:]:          # строка 0 = заголовки, данные с индекса 1
         if not row or not any(row):
-            continue                # пустая строка — разделитель, пропускаем
+            continue
 
-        dev_name  = _s(row, 0)
-        part_name = _s(row, 1)
-        condition = _s(row, 2)
-        defect    = _s(row, 3)
-        inv       = _s(row, 4)
-        org       = _s(row, 5)
-        boss      = _s(row, 6)
-        eng1      = _s(row, 7)
-        eng2      = _s(row, 8)
+        org   = _g(row, 0)   # A
+        boss  = _g(row, 1)   # B
+        eng1  = _g(row, 2)   # C
+        eng2  = _g(row, 3)   # D
+        inv   = _g(row, 4)   # E  ← ключ
+        dev   = _g(row, 5)   # F
+        part  = _g(row, 6)   # G
+        holat = _g(row, 7)   # H
+        sabab = _g(row, 8)   # I
 
         if not inv:
-            continue   # строка без инвентарного номера — пропускаем
+            continue
 
-        # Создаём группу если ещё нет
-        if inv not in inv_groups:
-            inv_groups[inv] = {
+        if inv not in inv_data:
+            inv_data[inv] = {
                 'inv_number':      inv,
                 'org_name':        org,
                 'region':          '',
@@ -201,163 +365,116 @@ def read_spisan_excel(path: str) -> list:
                 'commission_head': boss,
                 'member1':         eng1,
                 'member2':         eng2,
-                'devices':         {},   # {dev_name: [parts]}
-                'device_order':    [],
+                'devices':         {},
+                'dev_order':       [],
             }
             inv_order.append(inv)
 
-        grp = inv_groups[inv]
+        g = inv_data[inv]
+        # Обновляем общие поля если пустые
+        if not g['org_name']        and org:  g['org_name']        = org
+        if not g['commission_head'] and boss: g['commission_head'] = boss
+        if not g['member1']         and eng1: g['member1']         = eng1
+        if not g['member2']         and eng2: g['member2']         = eng2
 
-        # Обновляем общие поля если они пустые
-        if not grp['org_name'] and org:
-            grp['org_name'] = org
-        if not grp['commission_head'] and boss:
-            grp['commission_head'] = boss
-        if not grp['member1'] and eng1:
-            grp['member1'] = eng1
-        if not grp['member2'] and eng2:
-            grp['member2'] = eng2
-
-        # Добавляем устройство
-        if dev_name:
-            if dev_name not in grp['devices']:
-                grp['devices'][dev_name] = []
-                grp['device_order'].append(dev_name)
-            if part_name:
-                grp['devices'][dev_name].append({
-                    'part_name': part_name,
-                    'condition': condition,
-                    'defect':    defect,
+        if dev:
+            if dev not in g['devices']:
+                g['devices'][dev] = []
+                g['dev_order'].append(dev)
+            if part:
+                g['devices'][dev].append({
+                    'part_name': part,
+                    'condition': holat,
+                    'defect':    sabab,
                 })
 
-    # Преобразуем в финальный формат (devices как список)
+    # Преобразуем в финальный формат
     result = []
     for inv in inv_order:
-        grp = inv_groups[inv]
-        devices = []
-        for dev_name in grp['device_order']:
-            devices.append({
-                'name':  dev_name,
-                'parts': grp['devices'][dev_name],
-            })
+        g = inv_data[inv]
+        devices = [
+            {'name': dn, 'parts': g['devices'][dn]}
+            for dn in g['dev_order']
+        ]
         result.append({
-            'inv_number':      grp['inv_number'],
-            'org_name':        grp['org_name'],
-            'region':          grp['region'],
-            'doc_date':        grp['doc_date'],
-            'commission_head': grp['commission_head'],
-            'member1':         grp['member1'],
-            'member2':         grp['member2'],
+            'inv_number':      g['inv_number'],
+            'org_name':        g['org_name'],
+            'region':          g['region'],
+            'doc_date':        g['doc_date'],
+            'commission_head': g['commission_head'],
+            'member1':         g['member1'],
+            'member2':         g['member2'],
             'devices':         devices,
         })
-
     return result
 
 
-# ══════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════
 #  ЧТЕНИЕ ШАБЛОНА УСТАНОВКИ
-#  → один dict с полным списком items
-# ══════════════════════════════════════════════
+# ════════════════════════════════════════════════════════════
 
 def read_ust_excel(path: str) -> dict:
     """
     Читает shablom_ust.xlsx.
-
-    ТОЧНАЯ структура колонок (единая для оригинала и сгенерированного шаблона):
-      A(0)  = Data              — дата документа
-      B(1)  = {num_otch}        — порядковый номер
-      C(2)  = installation date — дата установки (если пусто → берём из A)
-      D(3)  = {oborud name}     — наименование/модель оборудования
-      E(4)  = {serial num}      — серийный номер
-      F(5)  = {where oborud}    — место установки
-      G(6)  = {Organizasiya}    — организация
-      H(7)  = {adress}          — адрес
-      I(8)  = пустая колонка    — намеренный пропуск (как в оригинале)
-      J(9)  = {boss name}       — руководитель
-      K(10) = {engine1}         — инженер 1
-      L(11) = {job title1}      — должность 1
-      M(12) = {engine2}         — инженер 2
-      N(13) = {job title2}      — должность 2
+    Колонки: A=Tashkilot, B=Manzil, C=Rahbar, D=Muhandis1, E=Lavozim1,
+             F=Muhandis2, G=Lavozim2, H=Sana, I=Uskuna nomi,
+             J=Seriya, K=O'rnatish joyi
+    Строка 1 = заголовки, данные с строки 2.
+    Возвращает один dict со списком items.
     """
-    rows = _read_xlsx_rows(path)
+    rows = _read_rows(path)
     if not rows:
-        raise ValueError(f'Файл пуст или не читается: {path}')
+        raise ValueError(f'Файл пуст: {path}')
 
-    org_name  = ''
-    address   = ''
-    boss      = ''
-    eng1      = ''
-    job1      = ''
-    eng2      = ''
-    job2      = ''
-    doc_date  = ''
-    items     = []
+    org   = ''; addr  = ''; boss  = ''
+    eng1  = ''; job1  = ''; eng2  = ''; job2  = ''
+    items = []
 
-    def _to_date(val: str) -> str:
-        if not val:
-            return ''
-        val = val.strip()
-        if len(val) == 10 and val[2] == '.' and val[5] == '.':
-            return val
-        if val.replace('.', '').isdigit() and '.' not in val:
-            return _excel_date(val)
-        return val
-
-    for row in rows[2:]:        # строка 1=title, строка 2=заголовки, данные с строки 3
+    for row in rows[1:]:          # данные с индекса 1
         if not row or not any(row):
             continue
 
-        raw_doc_date  = _s(row,  0)   # A: дата документа
-        num           = _s(row,  1)   # B: №
-        raw_inst_date = _s(row,  2)   # C: дата установки
-        oborud        = _s(row,  3)   # D: модель оборудования
-        serial        = _s(row,  4)   # E: серийный номер
-        where         = _s(row,  5)   # F: место установки
-        org           = _s(row,  6)   # G: организация
-        addr          = _s(row,  7)   # H: адрес
-        # I(8) = пустая колонка (в обоих файлах)
-        bss           = _s(row,  9)   # J: руководитель
-        e1            = _s(row, 10)   # K: инженер 1
-        j1            = _s(row, 11)   # L: должность 1
-        e2            = _s(row, 12)   # M: инженер 2
-        j2            = _s(row, 13)   # N: должность 2
+        org_v  = _g(row,  0)   # A
+        addr_v = _g(row,  1)   # B
+        boss_v = _g(row,  2)   # C
+        e1_v   = _g(row,  3)   # D
+        j1_v   = _g(row,  4)   # E
+        e2_v   = _g(row,  5)   # F
+        j2_v   = _g(row,  6)   # G
+        sana   = _g(row,  7)   # H  — дата установки
+        nom    = _g(row,  8)   # I  — наименование оборудования
+        seriya = _g(row,  9)   # J
+        joyi   = _g(row, 10)   # K
 
-        if not doc_date and raw_doc_date:
-            doc_date = _to_date(raw_doc_date)
+        if not org   and org_v:  org  = org_v
+        if not addr  and addr_v: addr = addr_v
+        if not boss  and boss_v: boss = boss_v
+        if not eng1  and e1_v:   eng1 = e1_v;  job1 = j1_v
+        if not eng2  and e2_v:   eng2 = e2_v;  job2 = j2_v
 
-        install_date = (_to_date(raw_inst_date) if raw_inst_date
-                        else _to_date(raw_doc_date) if raw_doc_date
-                        else datetime.now().strftime('%d.%m.%Y'))
-
-        if not org_name and org:  org_name = org
-        if not address  and addr: address  = addr
-        if not boss     and bss:  boss     = bss
-        if not eng1     and e1:   eng1 = e1; job1 = j1
-        if not eng2     and e2:   eng2 = e2; job2 = j2
-
-        if not oborud:
+        if not nom:
             continue
 
         items.append({
-            'num':           num or str(len(items) + 1),
-            'name':          oborud,
-            'model':         oborud,
-            'serial_number': serial,
+            'num':           str(len(items) + 1),
+            'name':          nom,
+            'model':         nom,
+            'serial_number': seriya,
             'inv_number':    '',
-            'install_date':  install_date,
-            'location':      where,
+            'install_date':  _to_date(sana) or datetime.now().strftime('%d.%m.%Y'),
+            'location':      joyi,
             'cost':          '',
             'condition':     'Yangi',
-            'note':          where,
+            'note':          joyi,
         })
 
-    if not doc_date:
-        doc_date = datetime.now().strftime('%d.%m.%Y')
+    doc_date = (items[0]['install_date']
+                if items else datetime.now().strftime('%d.%m.%Y'))
 
     return {
-        'org_name':        org_name,
-        'region':          org_name,
-        'address':         address,
+        'org_name':        org,
+        'region':          org,
+        'address':         addr,
         'doc_number':      '1',
         'doc_date':        doc_date,
         'commission_head': boss,
@@ -367,227 +484,3 @@ def read_ust_excel(path: str) -> dict:
         'member2_title':   job2 or 'Yetakchi muhandis',
         'items':           items,
     }
-
-
-# ══════════════════════════════════════════════
-#  СТИЛИ ДЛЯ СОЗДАНИЯ ШАБЛОНОВ
-# ══════════════════════════════════════════════
-
-_HDR_FILL_S = PatternFill('solid', fgColor='2E4057')
-_HDR_FILL_U = PatternFill('solid', fgColor='1A5276')
-_HDR_FONT   = Font(name='Times New Roman', bold=True, color='FFFFFF', size=10)
-_DATA_FONT  = Font(name='Times New Roman', size=10)
-_CENTER     = Alignment(horizontal='center', vertical='center', wrap_text=True)
-_LEFT       = Alignment(horizontal='left',   vertical='center', wrap_text=True)
-_EVEN_S     = PatternFill('solid', fgColor='F0F4F8')
-_EVEN_U     = PatternFill('solid', fgColor='EBF5FB')
-_ODD        = PatternFill('solid', fgColor='FFFFFF')
-
-
-def _border(color='2E4057'):
-    s = Side(style='thin', color=color)
-    return Border(left=s, right=s, top=s, bottom=s)
-
-
-def _hdr_cell(ws, row, col, text, fill, width=None):
-    cell = ws.cell(row=row, column=col, value=text)
-    cell.font      = _HDR_FONT
-    cell.fill      = fill
-    cell.alignment = _CENTER
-    cell.border    = _border()
-    if width:
-        from openpyxl.utils import get_column_letter
-        ws.column_dimensions[get_column_letter(col)].width = width
-    return cell
-
-
-# ══════════════════════════════════════════════
-#  СОЗДАНИЕ ШАБЛОНА EXCEL — СПИСАНИЕ
-#  Структура = shablon_spisan.xlsx
-# ══════════════════════════════════════════════
-
-def create_spisan_template(path: str) -> str:
-    """Универсальный Excel шаблон для акта СПИСАНИЯ."""
-    wb = Workbook()
-    ws = wb.active
-    ws.title = 'Spisaniye'
-    ws.sheet_view.showGridLines = False
-
-    # Заголовок листа (строка 1)
-    ws.merge_cells('A1:I1')
-    ws['A1'] = 'АКТ СПИСАНИЯ — ШАБЛОН ДАННЫХ'
-    ws['A1'].font      = Font(name='Times New Roman', bold=True, size=13, color='FFFFFF')
-    ws['A1'].fill      = PatternFill('solid', fgColor='2E4057')
-    ws['A1'].alignment = _CENTER
-    ws.row_dimensions[1].height = 26
-
-    # Заголовки колонок (строка 2)
-    cols_s = [
-        ('A', 'Qurilma nomi\n(Оборудование)',          26),
-        ('B', 'Qismlar nomi\n(Компонент)',              20),
-        ('C', 'Holati\n(Yaroqli / Yaroqsiz)',           16),
-        ('D', 'Nosozlik sababi\n(Причина неисправн.)',  26),
-        ('E', 'Inventar raqami\n(Инв. номер)  ★',      18),
-        ('F', 'Tashkilot nomi\n(Организация)',          28),
-        ('G', 'Rahbar\n(Руководитель)',                  22),
-        ('H', 'Muhandis 1\n(Инженер 1)',                22),
-        ('I', 'Muhandis 2\n(Инженер 2)',                22),
-    ]
-    for ci, (col, text, width) in enumerate(cols_s, start=1):
-        cell = ws.cell(row=2, column=ci, value=text)
-        cell.font = _HDR_FONT
-        cell.fill = _HDR_FILL_S
-        cell.alignment = _CENTER
-        cell.border = _border()
-        ws.column_dimensions[col].width = width
-    ws.row_dimensions[2].height = 34
-
-    # Валидация состояния
-    dv = DataValidation(type='list', formula1='"Yaroqli,Yaroqsiz"',
-                        allow_blank=True, showDropDown=False)
-    dv.sqref = 'C3:C500'
-    ws.add_data_validation(dv)
-
-    # Примеры данных (данные начинаются с строки 3)
-    ORG = 'ABM Sirdaryo viloyati MChJ'
-    B = 'Palonov P.A'; E1 = 'Raxmatov V.A'; E2 = 'Xolbekov G.T'
-    ex_s = [
-        ('Server HP ML 350',     'Asosiy plata', 'Yaroqli',  "Ma'naviy eskirgan", '26-0006039', ORG, B, E1, E2),
-        ('Server HP ML 350',     'Tok manbayi',  'Yaroqli',  "Ma'naviy eskirgan", '26-0006039', ORG, B, E1, E2),
-        ('Server HP ML 350',     'Qattiq disk',  'Yaroqsiz', 'BAD bloklar mavjud','26-0006039', ORG, B, E1, E2),
-        (None,)*9,
-        ('Konditsioner ART-12HI','Tok manbai',   'Yaroqsiz', "Tok sarfi ko'p",    '24-0006162', ORG, B, E1, E2),
-        ('Konditsioner ART-12HI','Kompressor',   'Yaroqsiz', 'Shovqin mavjud',    '24-0006162', ORG, B, E1, E2),
-        ('Konditsioner ART-12HI','Radiator',     'Yaroqsiz', 'Yamalgan',          '24-0006162', ORG, B, E1, E2),
-        (None,)*9,
-        ("Monitor LCD 19''",     'Asosiy plata', 'Yaroqsiz', 'Korpus singan',     '26-0003436', ORG, B, E1, E2),
-        ("Monitor LCD 19''",     'Tok manbayi',  'Yaroqsiz', 'Kuygan',            '26-0003436', ORG, B, E1, E2),
-    ]
-
-    for ri, row_data in enumerate(ex_s):
-        rn = ri + 3
-        empty = not any(v for v in row_data if v)
-        fill  = _EVEN_S if (ri % 2 == 0 and not empty) else _ODD
-        ws.row_dimensions[rn].height = 18
-        for ci, val in enumerate(row_data, start=1):
-            cell = ws.cell(row=rn, column=ci, value=val)
-            cell.font = _DATA_FONT; cell.fill = fill
-            cell.border = _border(); cell.alignment = _CENTER if ci == 3 else _LEFT
-            if ci == 3 and val == 'Yaroqsiz':
-                cell.font = Font(name='Times New Roman', size=10, color='C0392B', bold=True)
-            if ci == 3 and val == 'Yaroqli':
-                cell.font = Font(name='Times New Roman', size=10, color='1E8B4C', bold=True)
-
-    for ri in range(len(ex_s), len(ex_s) + 20):
-        rn = ri + 3
-        fill = _EVEN_S if ri % 2 == 0 else _ODD
-        ws.row_dimensions[rn].height = 18
-        for ci in range(1, 10):
-            cell = ws.cell(row=rn, column=ci)
-            cell.font = _DATA_FONT; cell.fill = fill
-            cell.border = _border(); cell.alignment = _LEFT
-
-    ir = len(ex_s) + 24
-    ws.merge_cells(start_row=ir, start_column=1, end_row=ir, end_column=9)
-    ws.cell(row=ir, column=1).value = (
-        '★ Каждая строка = один компонент оборудования.  '
-        'Группировка в Word-файл по колонке E (Inventar raqami).  '
-        'Пустая строка — разделитель.  Holati: Yaroqli = исправен, Yaroqsiz = неисправен.')
-    ws.cell(row=ir, column=1).font = Font(name='Times New Roman', italic=True, size=9, color='888888')
-    ws.cell(row=ir, column=1).alignment = _LEFT
-    ws.row_dimensions[ir].height = 18
-    ws.freeze_panes = 'A3'
-    wb.save(path)
-    return path
-
-
-# ══════════════════════════════════════════════
-#  СОЗДАНИЕ ШАБЛОНА EXCEL — УСТАНОВКА
-#  Структура = shablom_ust.xlsx
-# ══════════════════════════════════════════════
-
-
-def create_ust_template(path: str) -> str:
-    """Универсальный Excel шаблон для акта УСТАНОВКИ."""
-    wb = Workbook()
-    ws = wb.active
-    ws.title = 'Ustanovka'
-    ws.sheet_view.showGridLines = False
-
-    # Заголовок листа (строка 1)
-    ws.merge_cells('A1:N1')
-    ws['A1'] = 'АКТ УСТАНОВКИ — ШАБЛОН ДАННЫХ'
-    ws['A1'].font      = Font(name='Times New Roman', bold=True, size=13, color='FFFFFF')
-    ws['A1'].fill      = PatternFill('solid', fgColor='1A5276')
-    ws['A1'].alignment = _CENTER
-    ws.row_dimensions[1].height = 26
-
-    # Заголовки колонок (строка 2)
-    cols_u = [
-        ('A', 'Sana (akt)\n(Дата акта)',             14),
-        ('B', '№',                                     4),
-        ('C', "O'rnatish sanasi\n(Вр. установки)",   16),
-        ('D', 'Uskuna nomi\n(Оборудование / Модель)', 26),
-        ('E', 'Seriya raqami\n(Серийный номер)',       18),
-        ('F', "O'rnatish joyi\n(Место установки)",    24),
-        ('G', 'Tashkilot nomi\n(Организация)',         28),
-        ('H', 'Manzil\n(Адрес)',                       22),
-        ('I', '',                                       4),
-        ('J', 'Rahbar\n(Руководитель)',                22),
-        ('K', 'Muhandis 1\n(Инженер 1)',               20),
-        ('L', "Muhandis 1\nlavozimi (Должность)",      18),
-        ('M', 'Muhandis 2\n(Инженер 2)',               20),
-        ('N', "Muhandis 2\nlavozimi (Должность)",      18),
-    ]
-    for ci, (col, text, width) in enumerate(cols_u, start=1):
-        ws.column_dimensions[col].width = width
-        if text:
-            cell = ws.cell(row=2, column=ci, value=text)
-            cell.font = _HDR_FONT; cell.fill = _HDR_FILL_U
-            cell.alignment = _CENTER; cell.border = _border('1A5276')
-    ws.row_dimensions[2].height = 34
-
-    # Примеры данных (с строки 3)
-    today = datetime.now().strftime('%d.%m.%Y')
-    ORG = 'ABM Sirdaryo viloyati MChJ'
-    ADDR = "Guliston sh., O'zbekiston ko'ch."
-    B = 'Palonov P.A'; E1 = 'Raxmatov V.A'; L1 = 'Yetakchi muhandis'
-    E2 = 'Xolbekov G.T'; L2 = 'Yetakchi muhandis'
-    ex_u = [
-        (today,'1',today,'Maipu MP1900X-22',  'SN-001','Guliston, 1-bino',ORG,ADDR,'',B,E1,L1,E2,L2),
-        (today,'2',today,'Maipu MP1900X-22',  'SN-002','Guliston, 2-bino',ORG,ADDR,'',B,E1,L1,E2,L2),
-        (today,'3',today,'Switch Cisco SG350','SN-003','Guliston, 3-bino',ORG,ADDR,'',B,E1,L1,E2,L2),
-        (today,'4',today,'UPS APC 1500VA',    'SN-004','Server xona',     ORG,ADDR,'',B,E1,L1,E2,L2),
-    ]
-
-    for ri, row_data in enumerate(ex_u):
-        rn = ri + 3
-        fill = _EVEN_U if ri % 2 == 0 else _ODD
-        ws.row_dimensions[rn].height = 20
-        for ci, val in enumerate(row_data, start=1):
-            cell = ws.cell(row=rn, column=ci, value=val if val else None)
-            cell.font = _DATA_FONT; cell.fill = fill
-            cell.border = _border('1A5276')
-            cell.alignment = _CENTER if ci in (1,2,3,9) else _LEFT
-
-    for ri in range(len(ex_u), len(ex_u) + 20):
-        rn = ri + 3
-        fill = _EVEN_U if ri % 2 == 0 else _ODD
-        ws.row_dimensions[rn].height = 20
-        for ci in range(1, 15):
-            cell = ws.cell(row=rn, column=ci)
-            cell.font = _DATA_FONT; cell.fill = fill
-            cell.border = _border('1A5276'); cell.alignment = _LEFT
-
-    ir = len(ex_u) + 24
-    ws.merge_cells(start_row=ir, start_column=1, end_row=ir, end_column=14)
-    ws.cell(row=ir, column=1).value = (
-        'A=Дата акта,  C=Вр. установки (дд.мм.гггг),  D=Модель,  '
-        'E=Серийный №,  F=Место установки,  G=Организация,  H=Адрес,  '
-        'J=Руководитель,  K/M=Инженеры,  L/N=Должности.  Колонку I не заполнять!')
-    ws.cell(row=ir, column=1).font = Font(name='Times New Roman', italic=True, size=9, color='888888')
-    ws.cell(row=ir, column=1).alignment = _LEFT
-    ws.row_dimensions[ir].height = 18
-    ws.freeze_panes = 'A3'
-    wb.save(path)
-    return path

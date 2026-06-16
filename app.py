@@ -653,11 +653,13 @@ class SpisanTab(tk.Frame):
             self._out_dir.set(d)
 
     def _create_template(self):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         path = filedialog.asksaveasfilename(
-            title='Сохранить шаблон Excel',
+            title='Сохранить шаблон Excel для СПИСАНИЯ',
             defaultextension='.xlsx',
             filetypes=[('Excel файлы', '*.xlsx')],
-            initialfile='shablon_spisaniya.xlsx')
+            initialdir=base_dir,
+            initialfile='shablon_spisan.xlsx')
         if not path:
             return
         try:
@@ -916,11 +918,13 @@ class UstTab(tk.Frame):
             self._out_dir.set(d)
 
     def _create_template(self):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         path = filedialog.asksaveasfilename(
-            title='Сохранить шаблон Excel',
+            title='Сохранить шаблон Excel для УСТАНОВКИ',
             defaultextension='.xlsx',
             filetypes=[('Excel файлы', '*.xlsx')],
-            initialfile='shablon_ustanovki.xlsx')
+            initialdir=base_dir,
+            initialfile='shablom_ust.xlsx')
         if not path:
             return
         try:
@@ -1317,19 +1321,18 @@ def ensure_templates():
     Если файл не найден — автоматически создаёт его.
     Вызывается при каждом запуске приложения.
     """
-    # Папка где лежит app.py
     base_dir = os.path.dirname(os.path.abspath(__file__))
 
     templates = [
         (
             os.path.join(base_dir, 'shablon_spisan.xlsx'),
             excel_handler.create_spisan_template,
-            'shablon_spisan.xlsx',
+            'shablon_spisan.xlsx  (АКТ СПИСАНИЯ)',
         ),
         (
             os.path.join(base_dir, 'shablom_ust.xlsx'),
             excel_handler.create_ust_template,
-            'shablom_ust.xlsx',
+            'shablom_ust.xlsx  (АКТ УСТАНОВКИ)',
         ),
     ]
 
@@ -1344,12 +1347,26 @@ def ensure_templates():
                 print(f'[AUTO] Ошибка создания {name}: {e}')
 
     if restored:
-        messagebox.showinfo(
-            'Шаблоны восстановлены',
-            f'Следующие Excel шаблоны были восстановлены автоматически:\n\n'
+        import subprocess, platform
+        msg = (
+            'Шаблоны Excel созданы автоматически:\n\n'
             + '\n'.join(f'  ✅  {n}' for n in restored)
-            + f'\n\nПапка: {base_dir}'
+            + f'\n\nПапка:\n{base_dir}\n\n'
+            'Откройте файл, заполните данные и загрузите через кнопку\n'
+            '"📥 Загрузить из Excel".'
         )
+        messagebox.showinfo('Шаблоны созданы', msg)
+
+        # Открываем папку в проводнике
+        try:
+            if platform.system() == 'Windows':
+                os.startfile(base_dir)
+            elif platform.system() == 'Darwin':
+                subprocess.Popen(['open', base_dir])
+            else:
+                subprocess.Popen(['xdg-open', base_dir])
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':
