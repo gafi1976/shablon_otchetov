@@ -101,9 +101,16 @@ def to_cyrillic(text: str) -> str:
       6. После гласной:  ye → е,  e → э
       7. Одиночные буквы по таблице LATIN_TO_CYRILLIC
     """
-    # Нормализация апострофов (windows vs mac)
-    text = text.replace('\u02bb', '\u2018')
-    text = text.replace('\u2019', '\u2018')
+    # Нормализация апострофов — все варианты → единый символ \u2018
+    # ord=39  '  ASCII апостроф
+    # ord=96  `  обратный апостроф
+    # U+02BB  ʻ  modifier letter turned comma
+    # U+02BC  ʼ  modifier letter apostrophe
+    # U+2018  '  left single quotation mark  (целевой)
+    # U+2019  '  right single quotation mark
+    # U+0027  '  apostrophe ASCII
+    for apos in ("'", '\u0027', '\u0060', '\u02bb', '\u02bc', '\u2019'):
+        text = text.replace(apos, '\u2018')
 
     # 1. Диграфы — первый проход (ch, sh, yo')
     compounds_first = {
