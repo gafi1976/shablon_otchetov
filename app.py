@@ -1311,6 +1311,49 @@ class App(tk.Tk):
 #  ТОЧКА ВХОДА
 # ══════════════════════════════════════════════════════
 
+def ensure_templates():
+    """
+    Проверяет наличие Excel шаблонов рядом с app.py.
+    Если файл не найден — автоматически создаёт его.
+    Вызывается при каждом запуске приложения.
+    """
+    # Папка где лежит app.py
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+
+    templates = [
+        (
+            os.path.join(base_dir, 'shablon_spisan.xlsx'),
+            excel_handler.create_spisan_template,
+            'shablon_spisan.xlsx',
+        ),
+        (
+            os.path.join(base_dir, 'shablom_ust.xlsx'),
+            excel_handler.create_ust_template,
+            'shablom_ust.xlsx',
+        ),
+    ]
+
+    restored = []
+    for path, creator, name in templates:
+        if not os.path.exists(path):
+            try:
+                creator(path)
+                restored.append(name)
+                print(f'[AUTO] Создан шаблон: {name}')
+            except Exception as e:
+                print(f'[AUTO] Ошибка создания {name}: {e}')
+
+    if restored:
+        messagebox.showinfo(
+            'Шаблоны восстановлены',
+            f'Следующие Excel шаблоны были восстановлены автоматически:\n\n'
+            + '\n'.join(f'  ✅  {n}' for n in restored)
+            + f'\n\nПапка: {base_dir}'
+        )
+
+
 if __name__ == '__main__':
     app = App()
+    # Проверяем шаблоны после запуска окна (чтобы messagebox работал корректно)
+    app.after(500, ensure_templates)
     app.mainloop()
