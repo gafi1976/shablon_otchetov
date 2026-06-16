@@ -191,8 +191,8 @@ def create_spisan_doc(group: dict, doc_number: str = '1',
             tcBorders.append(b)
         tcPr.append(tcBorders)
 
-    hdr_tbl.rows[0].cells[0].width = Cm(5)
-    hdr_tbl.rows[0].cells[1].width = Cm(12)
+    hdr_tbl.rows[0].cells[0].width = Cm(8)
+    hdr_tbl.rows[0].cells[1].width = Cm(9)
     right_cell = hdr_tbl.rows[0].cells[1]
 
     # Удаляем пустой параграф по умолчанию (безопасно — копируем список)
@@ -506,8 +506,8 @@ def save_all_in_one(groups: list, output_path: str,
             b.set(qn('w:space'), '0'); b.set(qn('w:color'), 'auto')
             tcBorders.append(b)
         tcPr.append(tcBorders)
-    hdr_tbl.rows[0].cells[0].width = Cm(5)
-    hdr_tbl.rows[0].cells[1].width = Cm(12)
+    hdr_tbl.rows[0].cells[0].width = Cm(8)
+    hdr_tbl.rows[0].cells[1].width = Cm(9)
     right_cell = hdr_tbl.rows[0].cells[1]
     for p in list(right_cell.paragraphs):
         p._element.getparent().remove(p._element)

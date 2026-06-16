@@ -167,8 +167,8 @@ def create_ust_doc(data: dict, doc_number: str = '1',
             tcBorders.append(b)
         tcPr.append(tcBorders)
 
-    hdr_tbl.rows[0].cells[0].width = Cm(5)   # пустая левая колонка
-    hdr_tbl.rows[0].cells[1].width = Cm(12)  # правая колонка с шапкой
+    hdr_tbl.rows[0].cells[0].width = Cm(8)   # пустая левая колонка
+    hdr_tbl.rows[0].cells[1].width = Cm(9)  # правая колонка с шапкой
 
     right_cell = hdr_tbl.rows[0].cells[1]
 
