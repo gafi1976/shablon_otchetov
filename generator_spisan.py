@@ -454,27 +454,248 @@ def save_single_files(groups: list, output_dir: str,
 
 def save_all_in_one(groups: list, output_path: str,
                     lang: str = 'auto') -> str:
-    """Все акты в одном файле."""
-    combined = Document()
-    combined.sections[0].top_margin    = Cm(2.0)
-    combined.sections[0].bottom_margin = Cm(2.0)
-    combined.sections[0].left_margin   = Cm(2.5)
-    combined.sections[0].right_margin  = Cm(1.5)
-    combined.styles['Normal'].font.name = 'Times New Roman'
-    combined.styles['Normal'].font.size = Pt(12)
+    """
+    Все группы в одном документе — единая шапка + единая таблица.
+    Каждая группа добавляет свои строки в общую таблицу.
+    """
+    if not groups:
+        return output_path
 
-    for idx, group in enumerate(groups, start=1):
-        single = create_spisan_doc(group, doc_number=str(idx), lang=lang)
-        for element in single.element.body:
-            combined.element.body.append(copy.deepcopy(element))
-        if idx < len(groups):
-            pb = OxmlElement('w:p')
-            pb_r = OxmlElement('w:r')
-            pb_br = OxmlElement('w:br')
-            pb_br.set(qn('w:type'), 'page')
-            pb_r.append(pb_br)
-            pb.append(pb_r)
-            combined.element.body.append(pb)
+    # Определяем язык по первой группе
+    if lang == 'auto':
+        lang = _auto_lang(groups[0])
 
-    combined.save(output_path)
+    T = TEXTS_SPISAN[lang]
+    M = MONTHS[lang]
+
+    # Берём общие данные из первой группы
+    first    = groups[0]
+    org_name = convert_to(first.get('org_name', ''),        lang)
+    region   = convert_to(first.get('region', ''),          lang)
+    boss     = convert_to(first.get('commission_head', ''), lang)
+    eng1     = convert_to(first.get('member1', ''),         lang)
+    eng2     = convert_to(first.get('member2', ''),         lang)
+
+    today    = datetime.now()
+    date_str = first.get('doc_date', today.strftime('%d.%m.%Y'))
+    try:
+        dt    = datetime.strptime(date_str, '%d.%m.%Y')
+        day   = str(dt.day)
+        month = M[dt.month]
+        year  = str(dt.year)
+    except Exception:
+        day   = str(today.day)
+        month = M[today.month]
+        year  = str(today.year)
+
+    doc = Document()
+    _set_margins(doc)
+    style = doc.styles['Normal']
+    style.font.name = 'Times New Roman'
+    style.font.size = Pt(12)
+
+    # ══ ШАПКА (единая) ══
+    hdr_tbl = doc.add_table(rows=1, cols=2)
+    hdr_tbl.alignment = WD_TABLE_ALIGNMENT.RIGHT
+    for cell in hdr_tbl.rows[0].cells:
+        tc = cell._tc; tcPr = tc.get_or_add_tcPr()
+        tcBorders = OxmlElement('w:tcBorders')
+        for edge in ('top','left','bottom','right'):
+            b = OxmlElement(f'w:{edge}')
+            b.set(qn('w:val'), 'none'); b.set(qn('w:sz'), '0')
+            b.set(qn('w:space'), '0'); b.set(qn('w:color'), 'auto')
+            tcBorders.append(b)
+        tcPr.append(tcBorders)
+    hdr_tbl.rows[0].cells[0].width = Cm(5)
+    hdr_tbl.rows[0].cells[1].width = Cm(12)
+    right_cell = hdr_tbl.rows[0].cells[1]
+    for p in list(right_cell.paragraphs):
+        p._element.getparent().remove(p._element)
+
+    def hdr_p(text, bold=False, size=11):
+        p = right_cell.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after  = Pt(1)
+        p.paragraph_format.line_spacing = Pt(14)
+        r = p.add_run(text)
+        r.bold = bold; r.font.size = Pt(size); r.font.name = 'Times New Roman'
+
+    hdr_p(T['tasdiq'], bold=True, size=11)
+    org_rahbar = f'{org_name} {T["rahbar"]}'
+    if len(org_rahbar) > 40:
+        words = org_rahbar.split(); mid = len(words) // 2
+        hdr_p(' '.join(words[:mid]), size=10)
+        hdr_p(' '.join(words[mid:]), size=10)
+    else:
+        hdr_p(org_rahbar, size=10)
+    sign_p = right_cell.add_paragraph()
+    sign_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    sign_p.paragraph_format.space_before = Pt(2)
+    sign_p.paragraph_format.space_after  = Pt(1)
+    sign_p.paragraph_format.line_spacing = Pt(14)
+    for txt in ['________________  ', boss]:
+        r = sign_p.add_run(txt); r.font.size = Pt(10); r.font.name = 'Times New Roman'
+    hdr_p(f'«{day}» {month} {year} {T["yil"]}', size=10)
+
+    doc.add_paragraph().paragraph_format.space_after = Pt(2)
+    _hr(doc)
+
+    # ══ ЗАГОЛОВОК (единый) ══
+    _p(doc, f'{T["title"]} 1',
+       bold=True, size=15, align=WD_ALIGN_PARAGRAPH.CENTER,
+       color=(0x2E, 0x40, 0x57), before=6, after=6)
+    subtitle = f'{org_name}  |  {region}' if region else org_name
+    _p(doc, subtitle, size=10, align=WD_ALIGN_PARAGRAPH.CENTER,
+       italic=True, after=8, color=(0x55, 0x55, 0x55))
+
+    # ══ ВВОДНЫЙ ТЕКСТ (единый) ══
+    intro = doc.add_paragraph()
+    intro.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    intro.paragraph_format.space_before = Pt(0)
+    intro.paragraph_format.space_after  = Pt(8)
+    intro.paragraph_format.line_spacing = Pt(16)
+    ir = intro.add_run('\t' + T['intro'].format(
+        org=org_name, region=region, eng1=eng1, eng2=eng2))
+    ir.font.size = Pt(12); ir.font.name = 'Times New Roman'
+
+    # ══ ЕДИНАЯ ТАБЛИЦА для всех групп ══
+    COL_WIDTHS   = [Cm(6.0), Cm(4.5), Cm(7.0)]
+    HEADER_COLOR = '2E4057'
+    EVEN_BG      = 'F0F4F8'
+    ODD_BG       = 'FFFFFF'
+    BAD_COLOR    = (0xC0, 0x39, 0x2B)
+    GOOD_COLOR   = (0x1E, 0x8B, 0x4C)
+
+    table = doc.add_table(rows=0, cols=3)
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.style = 'Table Grid'
+
+    part_counter = 0   # для чередования цветов строк
+
+    for group in groups:
+        inv     = group.get('inv_number', '')
+        devices = group.get('devices', [])
+
+        for dev in devices:
+            dev_name = dev.get('name', '').strip()
+            parts    = dev.get('parts', [])
+
+            # Строка: Qurilma nomi + Inventar raqami
+            title_row = table.add_row()
+            title_row.cells[0].merge(title_row.cells[1])
+            title_row.cells[0].merge(title_row.cells[2])
+            cell = title_row.cells[0]
+            _set_cell_bg(cell, 'D6EAF8')
+            _set_cell_border(cell, '2E4057')
+            cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+            p_t = cell.paragraphs[0]
+            p_t.paragraph_format.space_before = Pt(3)
+            p_t.paragraph_format.space_after  = Pt(3)
+            for txt, bold, color in [
+                (f'{T["qurilma"]}  ', True,  (0x1A, 0x52, 0x76)),
+                (dev_name,           True,   None),
+                (f'     {T["inventar"]}  ', True, (0x1A, 0x52, 0x76)),
+                (inv,                True,   None),
+            ]:
+                r = p_t.add_run(txt)
+                r.bold = bold; r.font.size = Pt(11); r.font.name = 'Times New Roman'
+                if color: r.font.color.rgb = RGBColor(*color)
+
+            # Заголовок колонок
+            hdr_row = table.add_row()
+            hdr_row.height = Pt(22)
+            for ci, (cell, label, w) in enumerate(zip(
+                    hdr_row.cells,
+                    [T['col_qism'], T['col_yarоq'], T['col_nosoz']],
+                    COL_WIDTHS)):
+                cell.width = w
+                _set_cell_bg(cell, HEADER_COLOR)
+                _set_cell_border(cell, HEADER_COLOR)
+                cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+                p = cell.paragraphs[0]
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p.paragraph_format.space_before = Pt(2)
+                p.paragraph_format.space_after  = Pt(2)
+                p.paragraph_format.line_spacing = Pt(13)
+                run = p.add_run(label)
+                run.bold = True; run.font.size = Pt(9); run.font.name = 'Times New Roman'
+                run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+
+            # Строки компонентов
+            for pi, part in enumerate(parts):
+                part_name = part.get('part_name', '')
+                condition = convert_to(part.get('condition', ''), lang)
+                defect    = convert_to(part.get('defect', ''),    lang)
+                is_bad    = any(w in condition.lower() for w in
+                               ('yaroqsiz', 'яроқсиз', 'yaramsiz'))
+
+                data_row = table.add_row()
+                data_row.height = Pt(20)
+                bg = EVEN_BG if part_counter % 2 == 0 else ODD_BG
+                part_counter += 1
+
+                for ci, (cell, val) in enumerate(zip(data_row.cells,
+                                                      [part_name, condition, defect])):
+                    _set_cell_bg(cell, bg)
+                    _set_cell_border(cell)
+                    cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+                    p = cell.paragraphs[0]
+                    p.alignment = (WD_ALIGN_PARAGRAPH.CENTER if ci == 1
+                                   else WD_ALIGN_PARAGRAPH.LEFT)
+                    p.paragraph_format.space_before = Pt(2)
+                    p.paragraph_format.space_after  = Pt(2)
+                    p.paragraph_format.line_spacing = Pt(13)
+                    run = p.add_run(val)
+                    run.font.size = Pt(10); run.font.name = 'Times New Roman'
+                    if ci == 1:
+                        if is_bad:
+                            run.font.color.rgb = RGBColor(*BAD_COLOR); run.bold = True
+                        else:
+                            run.font.color.rgb = RGBColor(*GOOD_COLOR)
+
+    doc.add_paragraph().paragraph_format.space_after = Pt(6)
+
+    # ══ XULOSA (единая) ══
+    _p(doc, T['xulosa'], bold=True, size=13,
+       align=WD_ALIGN_PARAGRAPH.CENTER,
+       color=(0x2E, 0x40, 0x57), before=6, after=4)
+
+    # Собираем все названия устройств из всех групп
+    all_dev_names = []
+    for group in groups:
+        for dev in group.get('devices', []):
+            name = dev.get('name', '').strip()
+            if name:
+                all_dev_names.append(f'«{name}»')
+    names_str = ', '.join(all_dev_names)
+
+    for txt_key in ('xulosa1', 'xulosa2'):
+        xp = doc.add_paragraph()
+        xp.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        xp.paragraph_format.space_before = Pt(0)
+        xp.paragraph_format.space_after  = Pt(4)
+        xp.paragraph_format.line_spacing = Pt(16)
+        xr = xp.add_run('\t' + T[txt_key].format(names=names_str))
+        xr.font.size = Pt(12); xr.font.name = 'Times New Roman'
+
+    doc.add_paragraph().paragraph_format.space_after = Pt(10)
+
+    # ══ ПОДПИСИ (единые) ══
+    sig_tbl = doc.add_table(rows=2, cols=3)
+    sig_tbl.alignment = WD_TABLE_ALIGNMENT.LEFT
+    for i, engineer in enumerate([eng1, eng2]):
+        row = sig_tbl.rows[i]
+        row.cells[0].width = Cm(5); row.cells[1].width = Cm(7); row.cells[2].width = Cm(5)
+        def sc(cell, text, bold=False):
+            p = cell.paragraphs[0]
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after  = Pt(8)
+            r = p.add_run(text); r.bold = bold
+            r.font.size = Pt(11); r.font.name = 'Times New Roman'
+        sc(row.cells[0], T['muhandis'], bold=True)
+        sc(row.cells[1], '______________________')
+        sc(row.cells[2], engineer)
+
+    doc.save(output_path)
     return output_path
