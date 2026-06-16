@@ -574,7 +574,7 @@ class SpisanTab(tk.Frame):
         row = tk.Frame(card.inner, bg=bg)
         row.pack(fill='x', pady=4)
 
-        # Режим
+        # Режим сохранения
         tk.Label(row, text='Режим сохранения:', bg=bg, fg=COLORS['text'],
                  font=FONT_BODY).pack(side='left', padx=(0, 8))
         self._save_mode = tk.StringVar(value='single')
@@ -586,6 +586,26 @@ class SpisanTab(tk.Frame):
                        variable=self._save_mode, value='all',
                        bg=bg, fg=COLORS['text'], font=FONT_BODY,
                        selectcolor=bg, activebackground=bg).pack(side='left')
+
+        # Переключатель алфавита
+        lang_row = tk.Frame(card.inner, bg=bg)
+        lang_row.pack(fill='x', pady=(6, 0))
+        tk.Label(lang_row, text='Алфавит документа:', bg=bg,
+                 fg=COLORS['text'], font=FONT_BODY).pack(side='left', padx=(0, 8))
+        self._lang = tk.StringVar(value='auto')
+        for val, lbl, clr in [
+            ('auto',     '🔍 Авто',     '#5D6D7E'),
+            ('latin',    'Lа Latin',    '#1A5276'),
+            ('cyrillic', 'Кр Кириллица','#6C3483'),
+        ]:
+            tk.Radiobutton(
+                lang_row, text=lbl, variable=self._lang, value=val,
+                bg=bg, fg=clr, font=('Segoe UI', 10, 'bold'),
+                selectcolor=bg, activebackground=bg,
+                indicatoron=0, relief='flat', bd=1,
+                padx=10, pady=3,
+                activeforeground=clr,
+            ).pack(side='left', padx=(0, 6))
 
         row2 = tk.Frame(card.inner, bg=bg)
         row2.pack(fill='x', pady=(6, 0))
@@ -732,20 +752,22 @@ class SpisanTab(tk.Frame):
 
         def do_gen():
             try:
-                self._status.set('Генерация актов списания...')
+                lang = self._lang.get()
+                lang_name = {'auto': 'Авто', 'latin': 'Latin', 'cyrillic': 'Кириллица'}[lang]
+                self._status.set(f'Генерация актов списания ({lang_name})...')
                 if mode == 'single':
-                    paths = generator_spisan.save_single_files(groups, out_dir)
+                    paths = generator_spisan.save_single_files(groups, out_dir, lang=lang)
                     for p in paths:
                         self._log_msg(f'✅ Создан: {os.path.basename(p)}')
                     msg = f'Создано файлов: {len(paths)}\nПапка: {out_dir}'
                 else:
                     fname    = f'Texnik_Xulosa_vse_{datetime.now().strftime("%Y%m%d_%H%M%S")}.docx'
                     out_path = os.path.join(out_dir, fname)
-                    generator_spisan.save_all_in_one(groups, out_path)
+                    generator_spisan.save_all_in_one(groups, out_path, lang=lang)
                     self._log_msg(f'✅ Создан общий файл: {fname}')
                     msg = f'Создан файл:\n{out_path}'
 
-                self._status.set(f'Готово ✓  ({len(groups)} актов)')
+                self._status.set(f'Готово ✓  ({len(groups)} актов, {lang_name})')
                 messagebox.showinfo('Готово', msg)
             except Exception as e:
                 self._log_msg(f'❌ Ошибка генерации: {e}')
@@ -831,6 +853,26 @@ class UstTab(tk.Frame):
                        variable=self._save_mode, value='all',
                        bg=bg, fg=COLORS['text'], font=FONT_BODY,
                        selectcolor=bg, activebackground=bg).pack(side='left')
+
+        # Переключатель алфавита
+        lang_row = tk.Frame(card.inner, bg=bg)
+        lang_row.pack(fill='x', pady=(6, 0))
+        tk.Label(lang_row, text='Алфавит документа:', bg=bg,
+                 fg=COLORS['text'], font=FONT_BODY).pack(side='left', padx=(0, 8))
+        self._lang = tk.StringVar(value='auto')
+        for val, lbl, clr in [
+            ('auto',     '🔍 Авто',     '#5D6D7E'),
+            ('latin',    'Lа Latin',    '#1A5276'),
+            ('cyrillic', 'Кр Кириллица','#6C3483'),
+        ]:
+            tk.Radiobutton(
+                lang_row, text=lbl, variable=self._lang, value=val,
+                bg=bg, fg=clr, font=('Segoe UI', 10, 'bold'),
+                selectcolor=bg, activebackground=bg,
+                indicatoron=0, relief='flat', bd=1,
+                padx=10, pady=3,
+                activeforeground=clr,
+            ).pack(side='left', padx=(0, 6))
 
         row2 = tk.Frame(card.inner, bg=bg)
         row2.pack(fill='x', pady=(6, 0))
@@ -939,20 +981,22 @@ class UstTab(tk.Frame):
 
         def do_gen():
             try:
-                self._status.set('Генерация акта установки...')
+                lang = self._lang.get()
+                lang_name = {'auto': 'Авто', 'latin': 'Latin', 'cyrillic': 'Кириллица'}[lang]
+                self._status.set(f'Генерация акта установки ({lang_name})...')
                 if mode == 'single':
-                    paths = generator_ust.save_single_files([data], out_dir)
+                    paths = generator_ust.save_single_files([data], out_dir, lang=lang)
                     for p in paths:
                         self._log_msg(f'✅ Создан: {os.path.basename(p)}')
                     msg = f'Создано файлов: {len(paths)}\nПапка: {out_dir}'
                 else:
                     fname    = f'Dalolatnoma_vse_{datetime.now().strftime("%Y%m%d_%H%M%S")}.docx'
                     out_path = os.path.join(out_dir, fname)
-                    generator_ust.save_all_in_one([data], out_path)
+                    generator_ust.save_all_in_one([data], out_path, lang=lang)
                     self._log_msg(f'✅ Создан общий файл: {fname}')
                     msg = f'Создан файл:\n{out_path}'
 
-                self._status.set(f'Готово ✓')
+                self._status.set(f'Готово ✓  ({lang_name})')
                 messagebox.showinfo('Готово', msg)
             except Exception as e:
                 self._log_msg(f'❌ Ошибка генерации: {e}')
@@ -1048,6 +1092,25 @@ class BatchTab(tk.Frame):
                        bg=bg, fg=COLORS['text'], font=FONT_BODY,
                        selectcolor=bg, activebackground=bg).pack(side='left')
 
+        # Переключатель алфавита
+        lang_row = tk.Frame(save_card.inner, bg=bg)
+        lang_row.pack(fill='x', pady=(6, 0))
+        tk.Label(lang_row, text='Алфавит документа:', bg=bg,
+                 fg=COLORS['text'], font=FONT_BODY).pack(side='left', padx=(0, 8))
+        self._lang = tk.StringVar(value='auto')
+        for val, lbl, clr in [
+            ('auto',     '🔍 Авто',     '#5D6D7E'),
+            ('latin',    'Lа Latin',    '#1A5276'),
+            ('cyrillic', 'Кр Кириллица','#6C3483'),
+        ]:
+            tk.Radiobutton(
+                lang_row, text=lbl, variable=self._lang, value=val,
+                bg=bg, fg=clr, font=('Segoe UI', 10, 'bold'),
+                selectcolor=bg, activebackground=bg,
+                indicatoron=0, relief='flat', bd=1,
+                padx=10, pady=3, activeforeground=clr,
+            ).pack(side='left', padx=(0, 6))
+
         row2 = tk.Frame(save_card.inner, bg=bg)
         row2.pack(fill='x', pady=(6, 4))
         self._out_dir = LabeledEntry(row2, 'Папка для сохранения', width=50, bg=bg)
@@ -1130,12 +1193,14 @@ class BatchTab(tk.Frame):
                 return
 
             try:
-                self._status.set('Генерация...')
+                lang = self._lang.get()
+                lang_name = {'auto': 'Авто', 'latin': 'Latin', 'cyrillic': 'Кириллица'}[lang]
+                self._status.set(f'Генерация... ({lang_name})')
                 if mode == 'single':
                     if doc_type == 'spisan':
-                        paths = generator_spisan.save_single_files(data_list, out_dir)
+                        paths = generator_spisan.save_single_files(data_list, out_dir, lang=lang)
                     else:
-                        paths = generator_ust.save_single_files(data_list, out_dir)
+                        paths = generator_ust.save_single_files(data_list, out_dir, lang=lang)
                     for p in paths:
                         self._log_msg(f'✅ Создан: {os.path.basename(p)}')
                 else:
@@ -1144,12 +1209,12 @@ class BatchTab(tk.Frame):
                     fname = f'{label}_vse_{ts}.docx'
                     out_path = os.path.join(out_dir, fname)
                     if doc_type == 'spisan':
-                        generator_spisan.save_all_in_one(data_list, out_path)
+                        generator_spisan.save_all_in_one(data_list, out_path, lang=lang)
                     else:
-                        generator_ust.save_all_in_one(data_list, out_path)
+                        generator_ust.save_all_in_one(data_list, out_path, lang=lang)
                     self._log_msg(f'✅ Создан общий файл: {fname}')
 
-                self._status.set(f'Готово ✓  Создано актов: {len(data_list)}')
+                self._status.set(f'Готово ✓  {len(data_list)} актов ({lang_name})')
                 messagebox.showinfo('Готово',
                                     f'Генерация завершена!\nСоздано актов: {len(data_list)}\n'
                                     f'Папка: {out_dir}')
