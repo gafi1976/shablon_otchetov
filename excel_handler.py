@@ -266,20 +266,18 @@ def read_ust_excel(path: str) -> dict:
     ТОЧНАЯ структура колонок (единая для оригинала и сгенерированного шаблона):
       A(0)  = Data              — дата документа
       B(1)  = {num_otch}        — порядковый номер
-      C(2)  = installation date — дата установки (может быть пустой → берём из A)
+      C(2)  = installation date — дата установки (если пусто → берём из A)
       D(3)  = {oborud name}     — наименование/модель оборудования
       E(4)  = {serial num}      — серийный номер
       F(5)  = {where oborud}    — место установки
       G(6)  = {Organizasiya}    — организация
       H(7)  = {adress}          — адрес
-      I(8)  = {boss name}       — руководитель  ← был пропуск J в оригинале, теперь I
-      J(9)  = {engine1}         — инженер 1
-      K(10) = {job title1}      — должность 1
-      L(11) = {engine2}         — инженер 2
-      M(12) = {job title2}      — должность 2
-
-    СОВМЕСТИМОСТЬ с оригинальным shablom_ust.xlsx (пустая колонка I, данные с J):
-      Если в колонке I(8) пусто, а в J(9) есть данные — читаем boss из J(9).
+      I(8)  = пустая колонка    — намеренный пропуск (как в оригинале)
+      J(9)  = {boss name}       — руководитель
+      K(10) = {engine1}         — инженер 1
+      L(11) = {job title1}      — должность 1
+      M(12) = {engine2}         — инженер 2
+      N(13) = {job title2}      — должность 2
     """
     rows = _read_xlsx_rows(path)
     if not rows:
@@ -309,34 +307,20 @@ def read_ust_excel(path: str) -> dict:
         if not row or not any(row):
             continue
 
-        raw_doc_date  = _s(row,  0)   # A
-        num           = _s(row,  1)   # B
-        raw_inst_date = _s(row,  2)   # C
-        oborud        = _s(row,  3)   # D
-        serial        = _s(row,  4)   # E
-        where         = _s(row,  5)   # F
-        org           = _s(row,  6)   # G
-        addr          = _s(row,  7)   # H
-
-        # Совместимость: оригинал имеет пустую I и данные с J
-        # Сгенерированный шаблон имеет данные с I
-        col_i = _s(row,  8)   # I
-        col_j = _s(row,  9)   # J
-
-        if col_i:
-            # Сгенерированный шаблон: boss в I
-            bss = col_i
-            e1  = _s(row, 9)
-            j1  = _s(row, 10)
-            e2  = _s(row, 11)
-            j2  = _s(row, 12)
-        else:
-            # Оригинальный шаблон: I пустая, boss в J
-            bss = col_j
-            e1  = _s(row, 10)
-            j1  = _s(row, 11)
-            e2  = _s(row, 12)
-            j2  = _s(row, 13)
+        raw_doc_date  = _s(row,  0)   # A: дата документа
+        num           = _s(row,  1)   # B: №
+        raw_inst_date = _s(row,  2)   # C: дата установки
+        oborud        = _s(row,  3)   # D: модель оборудования
+        serial        = _s(row,  4)   # E: серийный номер
+        where         = _s(row,  5)   # F: место установки
+        org           = _s(row,  6)   # G: организация
+        addr          = _s(row,  7)   # H: адрес
+        # I(8) = пустая колонка (в обоих файлах)
+        bss           = _s(row,  9)   # J: руководитель
+        e1            = _s(row, 10)   # K: инженер 1
+        j1            = _s(row, 11)   # L: должность 1
+        e2            = _s(row, 12)   # M: инженер 2
+        j2            = _s(row, 13)   # N: должность 2
 
         if not doc_date and raw_doc_date:
             doc_date = _to_date(raw_doc_date)
@@ -525,10 +509,12 @@ def create_spisan_template(path: str) -> str:
 def create_ust_template(path: str) -> str:
     """
     Создаёт Excel шаблон для данных УСТАНОВКИ.
-    Структура совпадает с shablom_ust.xlsx:
-      A=Data, B={num_otch}, C={oborud name}, D=serial num, E=inv,
-      F={where oborud}, G={Organizasiya}, H={adress},
-      I={boss name}, J={engine1}, K={job title1}, L={engine2}, M={job title2}
+    Структура ТОЧНО совпадает с оригинальным shablom_ust.xlsx:
+      A=Data,              B={num_otch},       C=installation date,
+      D={oborud name},     E={serial num},     F={where oborud},
+      G={Organizasiya},    H={adress},         I=(пусто),
+      J={boss name},       K={engine1},        L={job title1},
+      M={engine2},         N={job title2}
     """
     wb = Workbook()
     ws = wb.active
@@ -536,29 +522,40 @@ def create_ust_template(path: str) -> str:
     ws.sheet_view.showGridLines = False
     ws.row_dimensions[1].height = 38
 
+    # 14 колонок A–N, колонка I пустая (как в оригинале)
     headers = [
-        ('Data\n(Дата)',                     14),
-        ('{num_otch}\n(№)',                   6),
-        ('{oborud name}\n(Модель/Марка)',     26),
-        ('Serial num\n(Серийный №)',          18),
-        ('Inventar raqami\n(Инв. номер)',     16),
-        ('{where oborud}\n(Место установки)', 24),
-        ('{Organizasiya}\n(Организация)',     28),
-        ('{adress}\n(Адрес)',                 22),
-        ('{boss name}\n(Руководитель)',       22),
-        ('{engine1}\n(Инженер 1)',            20),
-        ('{job title1}\n(Должность 1)',       18),
-        ('{engine2}\n(Инженер 2)',            20),
-        ('{job title2}\n(Должность 2)',       18),
+        ('A', 'Data\n(Дата акта)',               14),
+        ('B', '{num_otch}\n(№)',                   5),
+        ('C', 'installation date\n(Дата уст-ки)', 16),
+        ('D', '{oborud name}\n(Модель/Марка)',     26),
+        ('E', '{serial num}\n(Серийный №)',        18),
+        ('F', '{where oborud}\n(Место установки)', 24),
+        ('G', '{Organizasiya}\n(Организация)',     28),
+        ('H', '{adress}\n(Адрес)',                 22),
+        ('I', '',                                   4),   # пустая — как в оригинале
+        ('J', '{boss name}\n(Руководитель)',       22),
+        ('K', '{engine1}\n(Инженер 1)',            20),
+        ('L', '{job title1}\n(Должность 1)',       18),
+        ('M', '{engine2}\n(Инженер 2)',            20),
+        ('N', '{job title2}\n(Должность 2)',       18),
     ]
-    for ci, (text, width) in enumerate(headers, start=1):
-        _hdr_cell(ws, 1, ci, text, _HDR_FILL_U, width)
+
+    for ci, (col_letter, text, width) in enumerate(headers, start=1):
+        ws.column_dimensions[col_letter].width = width
+        if text:  # пустую колонку I не красим
+            cell = ws.cell(row=1, column=ci, value=text)
+            cell.font      = _HDR_FONT
+            cell.fill      = _HDR_FILL_U
+            cell.alignment = _CENTER
+            cell.border    = _border('1A5276')
+        ws.row_dimensions[1].height = 38
 
     today = datetime.now().strftime('%d.%m.%Y')
+    # 13 значений: A B C D E F G H I(пусто) J K L M N
     examples = [
-        (today, '1', 'Maipu MP1900X-22',   'SN-001', 'INV-0001', 'Guliston, 1-bino', 'ABM Sirdaryo viloyati MChJ', "Guliston sh., O'zbekiston k.", 'Palonov P.A', 'Raxmatov V.A', 'Yetakchi muhandis', 'Xolbekov G.T', 'Yetakchi muhandis'),
-        (today, '2', 'Maipu MP1900X-22',   'SN-002', 'INV-0002', 'Guliston, 2-bino', 'ABM Sirdaryo viloyati MChJ', "Guliston sh., O'zbekiston k.", 'Palonov P.A', 'Raxmatov V.A', 'Yetakchi muhandis', 'Xolbekov G.T', 'Yetakchi muhandis'),
-        (today, '3', 'Switch Cisco SG350', 'SN-003', 'INV-0003', 'Guliston, 3-bino', 'ABM Sirdaryo viloyati MChJ', "Guliston sh., O'zbekiston k.", 'Palonov P.A', 'Raxmatov V.A', 'Yetakchi muhandis', 'Xolbekov G.T', 'Yetakchi muhandis'),
+        (today, '1', today, 'Maipu MP1900X-22',   'SN-001', 'Guliston, 1-bino', 'ABM Sirdaryo viloyati MChJ', "Guliston sh., O'zbekiston k.", '', 'Palonov P.A', 'Raxmatov V.A', 'Yetakchi muhandis', 'Xolbekov G.T', 'Yetakchi muhandis'),
+        (today, '2', today, 'Maipu MP1900X-22',   'SN-002', 'Guliston, 2-bino', 'ABM Sirdaryo viloyati MChJ', "Guliston sh., O'zbekiston k.", '', 'Palonov P.A', 'Raxmatov V.A', 'Yetakchi muhandis', 'Xolbekov G.T', 'Yetakchi muhandis'),
+        (today, '3', today, 'Switch Cisco SG350', 'SN-003', 'Guliston, 3-bino', 'ABM Sirdaryo viloyati MChJ', "Guliston sh., O'zbekiston k.", '', 'Palonov P.A', 'Raxmatov V.A', 'Yetakchi muhandis', 'Xolbekov G.T', 'Yetakchi muhandis'),
     ]
 
     for ri, row_data in enumerate(examples):
@@ -566,17 +563,18 @@ def create_ust_template(path: str) -> str:
         ws.row_dimensions[rn].height = 20
         fill = _EVEN_U if ri % 2 == 0 else _ODD
         for ci, val in enumerate(row_data, start=1):
-            cell = ws.cell(row=rn, column=ci, value=val)
+            cell = ws.cell(row=rn, column=ci, value=val if val else None)
             cell.font      = _DATA_FONT
             cell.fill      = fill
             cell.border    = _border('1A5276')
-            cell.alignment = _CENTER if ci in (1, 2, 4, 5) else _LEFT
+            cell.alignment = _CENTER if ci in (1, 2, 3) else _LEFT
 
+    # Пустые строки для ввода
     for ri in range(len(examples), len(examples) + 15):
         rn = ri + 2
         ws.row_dimensions[rn].height = 20
         fill = _EVEN_U if ri % 2 == 0 else _ODD
-        for ci in range(1, 14):
+        for ci in range(1, 15):
             cell = ws.cell(row=rn, column=ci)
             cell.font   = _DATA_FONT
             cell.fill   = fill
@@ -584,11 +582,12 @@ def create_ust_template(path: str) -> str:
             cell.alignment = _LEFT
 
     ir = len(examples) + 17
-    ws.merge_cells(start_row=ir, start_column=1, end_row=ir, end_column=13)
+    ws.merge_cells(start_row=ir, start_column=1, end_row=ir, end_column=14)
     ws.cell(row=ir, column=1).value = (
-        'ИНСТРУКЦИЯ: Каждая строка — одна единица оборудования. '
-        'Поля организации, руководителя и инженеров одинаковы для всех строк. '
-        'Дата вводится в формате дд.мм.гггг.'
+        'ИНСТРУКЦИЯ: A=Дата акта, C=Дата установки (дд.мм.гггг), '
+        'D=Модель оборудования, E=Серийный номер, F=Место установки, '
+        'G=Организация, H=Адрес, J=Руководитель, K=Инженер 1, M=Инженер 2. '
+        'Колонка I оставьте пустой.'
     )
     ws.cell(row=ir, column=1).font = Font(name='Times New Roman',
                                           italic=True, size=9, color='888888')
