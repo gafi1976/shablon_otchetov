@@ -117,13 +117,13 @@ def create_ust_doc(data: dict, doc_number: str = '1',
     job2     = convert_to(data.get('member2_title', ''),   lang) or ('Yetakchi muhandis' if lang == 'latin' else 'Етакчи муҳандис')
     num_otch = data.get('doc_number', doc_number)
 
-    # Конвертируем items
+    # Конвертируем items — только место установки, название оборудования НЕ конвертируем
     items = []
     for item in data.get('items', []):
         items.append({
             'num':           item.get('num', ''),
-            'name':          convert_to(item.get('name', item.get('model', '')), lang),
-            'serial_number': item.get('serial_number', ''),
+            'name':          item.get('name', item.get('model', '')),   # не конвертируем
+            'serial_number': item.get('serial_number', ''),             # не конвертируем
             'install_date':  item.get('install_date', ''),
             'location':      convert_to(item.get('location', item.get('note', '')), lang),
         })
@@ -375,18 +375,29 @@ def _safe_filename(text: str) -> str:
 def save_single_files(data_list: list, output_dir: str,
                       lang: str = 'auto') -> list:
     """
-    Один .docx на каждый элемент data_list (один акт = один файл).
-    Все items внутри одного data входят в одну таблицу одного документа.
+    Каждый item = отдельный .docx файл.
+    Имя файла: Dalolatnoma_{num}_{uskuna}.docx
     """
     os.makedirs(output_dir, exist_ok=True)
     created = []
-    for i, data in enumerate(data_list, start=1):
-        doc  = create_ust_doc(data, doc_number=str(i), lang=lang)
-        org  = _safe_filename(data.get('org_name', ''))[:30]
-        fname = f'Dalolatnoma_{i}_{org}.docx' if org else f'Dalolatnoma_{i}.docx'
-        path  = os.path.join(output_dir, fname)
-        doc.save(path)
-        created.append(path)
+    for data in data_list:
+        items = data.get('items', [])
+        if not items:
+            doc  = create_ust_doc(data, doc_number='1', lang=lang)
+            path = os.path.join(output_dir, 'Dalolatnoma_1.docx')
+            doc.save(path)
+            created.append(path)
+            continue
+        for item in items:
+            # Каждый item — отдельный документ с одной строкой в таблице
+            single_data = {**data, 'items': [item]}
+            num   = str(item.get('num', len(created) + 1)).strip()
+            safe  = _safe_filename(item.get('name', item.get('model', '')))
+            fname = f'Dalolatnoma_{num}_{safe}.docx' if safe else f'Dalolatnoma_{num}.docx'
+            path  = os.path.join(output_dir, fname)
+            doc   = create_ust_doc(single_data, doc_number=num, lang=lang)
+            doc.save(path)
+            created.append(path)
     return created
 
 
