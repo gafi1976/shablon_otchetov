@@ -609,8 +609,10 @@ def _parse_ust_new(data_rows: list) -> dict:
 def _parse_ust_old(data_rows: list) -> dict:
     """
     Старый формат shablom_ust.xlsx:
-    A=Data, B=num, C=inst date, D=oborud name, E=serial,
-    F=where, G=Org, H=addr, I=пусто, J=boss, K=eng1, L=job1, M=eng2, N=job2
+    A(0)=Data, B(1)=num, C(2)=inst_date, D(3)=oborud_name,
+    E(4)=serial, F(5)=where, G(6)=Org, H(7)=addr,
+    I(8)=ПУСТАЯ, J(9)=boss, K(10)=eng1, L(11)=job1,
+    M(12)=eng2, N(13)=job2
     """
     org=''; addr=''; boss=''; e1=''; j1=''; e2=''; j2=''
     doc_date = ''
@@ -619,46 +621,49 @@ def _parse_ust_old(data_rows: list) -> dict:
     for row in data_rows:
         if not row or not any(row):
             continue
-        raw_doc   = _g(row,  0)
-        num       = _g(row,  1)
-        raw_inst  = _g(row,  2)
-        uskuna    = _g(row,  3)
-        seriya    = _g(row,  4)
-        where     = _g(row,  5)
-        org_v     = _g(row,  6)
-        addr_v    = _g(row,  7)
-        # I(8) пустая
-        boss_v    = _g(row,  9)
-        e1_v      = _g(row, 10)
-        j1_v      = _g(row, 11)
-        e2_v      = _g(row, 12)
-        j2_v      = _g(row, 13)
+        raw_doc   = _g(row,  0)   # A  дата акта
+        num       = _g(row,  1)   # B  номер строки
+        raw_inst  = _g(row,  2)   # C  дата установки
+        uskuna    = _g(row,  3)   # D  оборудование
+        seriya    = _g(row,  4)   # E  серийный номер
+        where     = _g(row,  5)   # F  место
+        org_v     = _g(row,  6)   # G  организация
+        addr_v    = _g(row,  7)   # H  адрес
+        # col 8 (I) — ПУСТАЯ
+        boss_v    = _g(row,  9)   # J  руководитель
+        e1_v      = _g(row, 10)   # K  инженер 1
+        j1_v      = _g(row, 11)   # L  должность 1
+        e2_v      = _g(row, 12)   # M  инженер 2
+        j2_v      = _g(row, 13)   # N  должность 2
 
         if not doc_date and raw_doc: doc_date = _to_date(raw_doc)
-        if not org  and org_v:  org  = org_v
-        if not addr and addr_v: addr = addr_v
-        if not boss and boss_v: boss = boss_v
-        if not e1   and e1_v:   e1 = e1_v; j1 = j1_v
-        if not e2   and e2_v:   e2 = e2_v; j2 = j2_v
+        if not org  and org_v:   org  = org_v
+        if not addr and addr_v:  addr = addr_v
+        if not boss and boss_v:  boss = boss_v
+        if not e1   and e1_v:    e1 = e1_v;  j1 = j1_v
+        if not e2   and e2_v:    e2 = e2_v;  j2 = j2_v
 
         if not uskuna:
             continue
 
-        inst = _to_date(raw_inst) if raw_inst else _to_date(raw_doc) if raw_doc else ''
+        inst = (_to_date(raw_inst) if raw_inst else
+                _to_date(raw_doc)  if raw_doc  else
+                datetime.now().strftime('%d.%m.%Y'))
         items.append({
             'num':           num or str(len(items) + 1),
             'name':          uskuna,
             'model':         uskuna,
             'serial_number': seriya,
             'inv_number':    '',
-            'install_date':  inst or datetime.now().strftime('%d.%m.%Y'),
+            'install_date':  inst,
             'location':      where,
             'cost':          '',
             'condition':     'Yangi',
             'note':          where,
         })
 
-    doc_date = doc_date or (items[0]['install_date'] if items else datetime.now().strftime('%d.%m.%Y'))
+    doc_date = doc_date or (items[0]['install_date'] if items
+                            else datetime.now().strftime('%d.%m.%Y'))
     return {
         'org_name':        org,
         'region':          org,
