@@ -279,56 +279,117 @@ def _to_date(val: str) -> str:
 
 
 def _get_sheet_index(path: str, sheet_name: str) -> int:
-    """Возвращает индекс листа по его имени (из workbook.xml)."""
+    """Возвращает индекс листа по его имени."""
     try:
         with zipfile.ZipFile(path) as z:
-            ns = {'n': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
             tree = ET.parse(z.open('xl/workbook.xml'))
-            sheets = tree.findall('.//n:sheet', ns)
-            for i, s in enumerate(sheets):
-                name = s.get('name', '') or s.get(
-                    '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}name', '')
-                # openpyxl сохраняет имя в атрибуте 'name'
-                if name.lower() == sheet_name.lower():
-                    return i
+            # Пробуем оба варианта namespace
+            for ns_uri in [
+                'http://schemas.openxmlformats.org/spreadsheetml/2006/main',
+                '',
+            ]:
+                ns = {'n': ns_uri} if ns_uri else {}
+                finder = './/n:sheet' if ns_uri else './/sheet'
+                sheets = tree.findall(finder, ns) if ns_uri else tree.findall(finder)
+                for i, s in enumerate(sheets):
+                    name = s.get('name', '')
+                    if name.lower() == sheet_name.lower():
+                        return i
     except Exception:
         pass
-    return 0
+    return -1   # не найден
+
+
+def _detect_format(rows: list) -> str:
+    """
+    Определяет формат файла по заголовкам строки 1.
+    Возвращает: 'new_spisan' | 'new_ust' | 'old_spisan' | 'old_ust' | 'unknown'
+    """
+    if not rows:
+        return 'unknown'
+    hdr = [_g(rows[0], i).lower() for i in range(min(15, len(rows[0])))]
+    joined = ' '.join(hdr)
+
+    # Новый формат — лист Spisaniye: A=Tashkilot, E=Inventar
+    if 'tashkilot' in joined and 'inventar' in joined and 'qurilma' in joined:
+        return 'new_spisan'
+    # Новый формат — лист Ustanovka: A=Tashkilot, I=Uskuna/Nom
+    if 'tashkilot' in joined and ('uskuna' in joined or 'joyi' in joined or 'sana' in joined):
+        return 'new_ust'
+    # Старый формат списания: A=Qurilma nomi, E=inv_num
+    if 'qurilma nomi' in joined or 'qurilma' in hdr[0]:
+        return 'old_spisan'
+    # Старый формат установки: A=Data/{num_otch}
+    if 'data' in hdr[0] or '{num_otch}' in joined or 'installation' in joined:
+        return 'old_ust'
+    return 'unknown'
 
 
 # ─────────────────────────────────────────────────
-#  ЧТЕНИЕ ЛИСТА "Spisaniye"
+#  ЧТЕНИЕ ЛИСТА "Spisaniye"  /  автоопределение
 # ─────────────────────────────────────────────────
 
 def read_spisan_excel(path: str) -> list:
     """
-    Читает лист "Spisaniye" из файла path.
-    Строка 1 = заголовки, данные с строки 2.
-    Колонки: A=Tashkilot, B=Rahbar, C=Muhandis1, D=Muhandis2,
-             E=Inventar, F=Qurilma, G=Qism, H=Holat, I=Sabab.
-    Возвращает список групп (по колонке E Inventar).
+    Читает данные для акта СПИСАНИЯ из xlsx-файла.
+    Поддерживает три формата автоматически:
+
+    1. НОВЫЙ (shablon.xlsx, лист 'Spisaniye'):
+       Строка 1 = заголовки, данные с строки 2.
+       A=Tashkilot, B=Rahbar, C=Muhandis1, D=Muhandis2,
+       E=Inventar★, F=Qurilma, G=Qism, H=Holat, I=Sabab
+
+    2. СТАРЫЙ (shablon_spisan.xlsx, лист 'Shablon'):
+       Строка 1 = заголовки, данные с строки 2.
+       A=Qurilma nomi, B=Qismlar nomi, C=Foydalanishga yaroqliligi,
+       D=Nosozlik belgilari, E=inv_num, F=Tashilot nomi,
+       G=boss name, H=enginer1, I=enginer2
+
+    Возвращает список групп по инвентарному номеру.
     """
-    idx  = _get_sheet_index(path, 'Spisaniye')
+    # Сначала пробуем найти лист 'Spisaniye'
+    idx = _get_sheet_index(path, 'Spisaniye')
+    if idx < 0:
+        idx = 0   # берём первый лист
+
     rows = _read_sheet(path, idx)
     if not rows:
-        raise ValueError(f'Лист "Spisaniye" пуст или не найден: {path}')
+        raise ValueError(f'Файл пуст или не читается: {path}')
 
+    fmt = _detect_format(rows)
+
+    if fmt == 'new_spisan':
+        # Новый формат: заголовки в строке 1, данные с строки 2
+        return _parse_spisan_new(rows[1:])
+    elif fmt == 'old_spisan':
+        # Старый формат: заголовки в строке 1, данные с строки 2
+        return _parse_spisan_old(rows[1:])
+    else:
+        # Неизвестный формат — пробуем как новый
+        return _parse_spisan_new(rows[1:])
+
+
+def _parse_spisan_new(data_rows: list) -> list:
+    """
+    Парсит данные нового формата:
+    A=Tashkilot, B=Rahbar, C=Muhandis1, D=Muhandis2,
+    E=Inventar, F=Qurilma, G=Qism, H=Holat, I=Sabab
+    """
     inv_data  = {}
     inv_order = []
 
-    for row in rows[1:]:          # строка 0 = заголовки → пропускаем
+    for row in data_rows:
         if not row or not any(row):
             continue
-
-        tashkilot = _g(row, 0)   # A
-        rahbar    = _g(row, 1)   # B
-        muh1      = _g(row, 2)   # C
-        muh2      = _g(row, 3)   # D
-        inventar  = _g(row, 4)   # E  ← ключ
-        qurilma   = _g(row, 5)   # F
-        qism      = _g(row, 6)   # G
-        holat     = _g(row, 7)   # H
-        sabab     = _g(row, 8)   # I
+        tashkilot = _g(row, 0)
+        rahbar    = _g(row, 1)
+        muh1      = _g(row, 2)
+        muh2      = _g(row, 3)
+        inventar  = _g(row, 4)
+        qurilma   = _g(row, 5)
+        qism      = _g(row, 6)
+        holat     = _g(row, 7)
+        sabab     = _g(row, 8)
 
         if not inventar:
             continue
@@ -364,6 +425,70 @@ def read_spisan_excel(path: str) -> list:
                     'defect':    sabab,
                 })
 
+    return _build_groups(inv_data, inv_order)
+
+
+def _parse_spisan_old(data_rows: list) -> list:
+    """
+    Парсит данные старого формата (shablon_spisan.xlsx):
+    A=Qurilma nomi, B=Qismlar nomi, C=Foydalanishga yaroqliligi,
+    D=Nosozlik belgilari, E=inv_num, F=Tashilot nomi,
+    G=boss name, H=enginer1, I=enginer2
+    """
+    inv_data  = {}
+    inv_order = []
+
+    for row in data_rows:
+        if not row or not any(row):
+            continue
+        qurilma   = _g(row, 0)
+        qism      = _g(row, 1)
+        holat     = _g(row, 2)
+        sabab     = _g(row, 3)
+        inventar  = _g(row, 4)
+        tashkilot = _g(row, 5)
+        rahbar    = _g(row, 6)
+        muh1      = _g(row, 7)
+        muh2      = _g(row, 8)
+
+        if not inventar:
+            continue
+
+        if inventar not in inv_data:
+            inv_data[inventar] = {
+                'inv_number':      inventar,
+                'org_name':        tashkilot,
+                'region':          '',
+                'doc_date':        datetime.now().strftime('%d.%m.%Y'),
+                'commission_head': rahbar,
+                'member1':         muh1,
+                'member2':         muh2,
+                'devices':         {},
+                'dev_order':       [],
+            }
+            inv_order.append(inventar)
+
+        g = inv_data[inventar]
+        if not g['org_name']        and tashkilot: g['org_name']        = tashkilot
+        if not g['commission_head'] and rahbar:    g['commission_head'] = rahbar
+        if not g['member1']         and muh1:      g['member1']         = muh1
+        if not g['member2']         and muh2:      g['member2']         = muh2
+
+        if qurilma:
+            if qurilma not in g['devices']:
+                g['devices'][qurilma] = []
+                g['dev_order'].append(qurilma)
+            if qism:
+                g['devices'][qurilma].append({
+                    'part_name': qism,
+                    'condition': holat,
+                    'defect':    sabab,
+                })
+
+    return _build_groups(inv_data, inv_order)
+
+
+def _build_groups(inv_data: dict, inv_order: list) -> list:
     result = []
     for inv in inv_order:
         g = inv_data[inv]
@@ -384,47 +509,70 @@ def read_spisan_excel(path: str) -> list:
 
 
 # ─────────────────────────────────────────────────
-#  ЧТЕНИЕ ЛИСТА "Ustanovka"
+#  ЧТЕНИЕ ЛИСТА "Ustanovka"  /  автоопределение
 # ─────────────────────────────────────────────────
 
 def read_ust_excel(path: str) -> dict:
     """
-    Читает лист "Ustanovka" из файла path.
-    Строка 1 = заголовки, данные с строки 2.
-    Колонки: A=Tashkilot, B=Manzil, C=Rahbar, D=Muhandis1, E=Lavozim1,
-             F=Muhandis2, G=Lavozim2, H=Sana, I=Uskuna, J=Seriya, K=Joyi.
-    Возвращает dict с полем items (список оборудования).
+    Читает данные для акта УСТАНОВКИ из xlsx-файла.
+    Поддерживает два формата автоматически:
+
+    1. НОВЫЙ (shablon.xlsx, лист 'Ustanovka'):
+       A=Tashkilot, B=Manzil, C=Rahbar, D=Muhandis1, E=Lavozim1,
+       F=Muhandis2, G=Lavozim2, H=Sana, I=Uskuna, J=Seriya, K=Joyi
+
+    2. СТАРЫЙ (shablom_ust.xlsx):
+       A=Data, B=num_otch, C=installation date, D=oborud name,
+       E=serial num, F=where oborud, G=Organizasiya, H=adress,
+       I=пусто, J=boss name, K=engine1, L=job title1,
+       M=engine2, N=job title2
     """
-    idx  = _get_sheet_index(path, 'Ustanovka')
+    # Сначала пробуем найти лист 'Ustanovka'
+    idx = _get_sheet_index(path, 'Ustanovka')
+    if idx < 0:
+        idx = 0
+
     rows = _read_sheet(path, idx)
     if not rows:
-        raise ValueError(f'Лист "Ustanovka" пуст или не найден: {path}')
+        raise ValueError(f'Файл пуст или не читается: {path}')
 
-    org = ''; addr = ''; boss = ''
-    e1  = ''; j1   = ''; e2   = ''; j2 = ''
+    fmt = _detect_format(rows)
+
+    if fmt in ('new_ust', 'new_spisan'):
+        return _parse_ust_new(rows[1:])
+    else:
+        return _parse_ust_old(rows[1:])
+
+
+def _parse_ust_new(data_rows: list) -> dict:
+    """
+    Новый формат Ustanovka:
+    A=Tashkilot, B=Manzil, C=Rahbar, D=Muhandis1, E=Lavozim1,
+    F=Muhandis2, G=Lavozim2, H=Sana, I=Uskuna, J=Seriya, K=Joyi
+    """
+    org=''; addr=''; boss=''; e1=''; j1=''; e2=''; j2=''
     items = []
 
-    for row in rows[1:]:          # строка 0 = заголовки → пропускаем
+    for row in data_rows:
         if not row or not any(row):
             continue
-
-        tashkilot = _g(row,  0)   # A
-        manzil    = _g(row,  1)   # B
-        rahbar    = _g(row,  2)   # C
-        muh1      = _g(row,  3)   # D
-        lav1      = _g(row,  4)   # E
-        muh2      = _g(row,  5)   # F
-        lav2      = _g(row,  6)   # G
-        sana      = _g(row,  7)   # H
-        uskuna    = _g(row,  8)   # I
-        seriya    = _g(row,  9)   # J
-        joyi      = _g(row, 10)   # K
+        tashkilot = _g(row,  0)
+        manzil    = _g(row,  1)
+        rahbar    = _g(row,  2)
+        muh1      = _g(row,  3)
+        lav1      = _g(row,  4)
+        muh2      = _g(row,  5)
+        lav2      = _g(row,  6)
+        sana      = _g(row,  7)
+        uskuna    = _g(row,  8)
+        seriya    = _g(row,  9)
+        joyi      = _g(row, 10)
 
         if not org  and tashkilot: org  = tashkilot
         if not addr and manzil:    addr = manzil
         if not boss and rahbar:    boss = rahbar
-        if not e1   and muh1:      e1   = muh1; j1 = lav1
-        if not e2   and muh2:      e2   = muh2; j2 = lav2
+        if not e1   and muh1:      e1 = muh1; j1 = lav1
+        if not e2   and muh2:      e2 = muh2; j2 = lav2
 
         if not uskuna:
             continue
@@ -443,7 +591,74 @@ def read_ust_excel(path: str) -> dict:
         })
 
     doc_date = items[0]['install_date'] if items else datetime.now().strftime('%d.%m.%Y')
+    return {
+        'org_name':        org,
+        'region':          org,
+        'address':         addr,
+        'doc_number':      '1',
+        'doc_date':        doc_date,
+        'commission_head': boss,
+        'member1':         e1,
+        'member1_title':   j1 or 'Yetakchi muhandis',
+        'member2':         e2,
+        'member2_title':   j2 or 'Yetakchi muhandis',
+        'items':           items,
+    }
 
+
+def _parse_ust_old(data_rows: list) -> dict:
+    """
+    Старый формат shablom_ust.xlsx:
+    A=Data, B=num, C=inst date, D=oborud name, E=serial,
+    F=where, G=Org, H=addr, I=пусто, J=boss, K=eng1, L=job1, M=eng2, N=job2
+    """
+    org=''; addr=''; boss=''; e1=''; j1=''; e2=''; j2=''
+    doc_date = ''
+    items = []
+
+    for row in data_rows:
+        if not row or not any(row):
+            continue
+        raw_doc   = _g(row,  0)
+        num       = _g(row,  1)
+        raw_inst  = _g(row,  2)
+        uskuna    = _g(row,  3)
+        seriya    = _g(row,  4)
+        where     = _g(row,  5)
+        org_v     = _g(row,  6)
+        addr_v    = _g(row,  7)
+        # I(8) пустая
+        boss_v    = _g(row,  9)
+        e1_v      = _g(row, 10)
+        j1_v      = _g(row, 11)
+        e2_v      = _g(row, 12)
+        j2_v      = _g(row, 13)
+
+        if not doc_date and raw_doc: doc_date = _to_date(raw_doc)
+        if not org  and org_v:  org  = org_v
+        if not addr and addr_v: addr = addr_v
+        if not boss and boss_v: boss = boss_v
+        if not e1   and e1_v:   e1 = e1_v; j1 = j1_v
+        if not e2   and e2_v:   e2 = e2_v; j2 = j2_v
+
+        if not uskuna:
+            continue
+
+        inst = _to_date(raw_inst) if raw_inst else _to_date(raw_doc) if raw_doc else ''
+        items.append({
+            'num':           num or str(len(items) + 1),
+            'name':          uskuna,
+            'model':         uskuna,
+            'serial_number': seriya,
+            'inv_number':    '',
+            'install_date':  inst or datetime.now().strftime('%d.%m.%Y'),
+            'location':      where,
+            'cost':          '',
+            'condition':     'Yangi',
+            'note':          where,
+        })
+
+    doc_date = doc_date or (items[0]['install_date'] if items else datetime.now().strftime('%d.%m.%Y'))
     return {
         'org_name':        org,
         'region':          org,
