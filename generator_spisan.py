@@ -132,20 +132,20 @@ def create_spisan_doc(group: dict, doc_number: str = '1',
     eng2     = convert_to(group.get('member2', ''),         lang)
     inv      = group.get('inv_number', '')
 
-    # Устройства и компоненты — названия и данные НЕ конвертируем
-    # (пользователь вводит данные в своём алфавите — оставляем как есть)
-    # Системные тексты (XULOSA, заголовки таблицы) конвертируются через T[]
+    # Устройства и компоненты:
+    # - названия (part_name, device name) — НЕ конвертируем
+    # - значения (condition/Holat, defect/Sabab) — конвертируем
     devices = []
     for dev in group.get('devices', []):
         parts = []
         for p in dev.get('parts', []):
             parts.append({
-                'part_name': p.get('part_name', ''),   # как есть
-                'condition': p.get('condition', ''),   # как есть
-                'defect':    p.get('defect', ''),      # как есть
+                'part_name': p.get('part_name', ''),                    # не конвертируем
+                'condition': convert_to(p.get('condition', ''), lang),  # конвертируем
+                'defect':    convert_to(p.get('defect', ''),    lang),  # конвертируем
             })
         devices.append({
-            'name':  dev.get('name', ''),   # как есть
+            'name':  dev.get('name', ''),   # не конвертируем
             'parts': parts,
         })
 
