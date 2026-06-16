@@ -174,7 +174,7 @@ def read_spisan_excel(path: str) -> list:
     inv_groups   = {}   # {inv_number: dict}
     inv_order    = []   # сохраняем порядок инвентарных номеров
 
-    for row in rows[1:]:            # с 1-го индекса = 2-я строка Excel
+    for row in rows[2:]:            # строка 1=title, строка 2=заголовки, данные с строки 3
         if not row or not any(row):
             continue                # пустая строка — разделитель, пропускаем
 
@@ -303,7 +303,7 @@ def read_ust_excel(path: str) -> dict:
             return _excel_date(val)
         return val
 
-    for row in rows[1:]:
+    for row in rows[2:]:        # строка 1=title, строка 2=заголовки, данные с строки 3
         if not row or not any(row):
             continue
 
@@ -407,96 +407,96 @@ def _hdr_cell(ws, row, col, text, fill, width=None):
 # ══════════════════════════════════════════════
 
 def create_spisan_template(path: str) -> str:
-    """
-    Создаёт Excel шаблон для данных СПИСАНИЯ.
-    Структура совпадает с shablon_spisan.xlsx:
-      A=Qurilma nomi, B=Qismlar nomi, C=Foydalanishga yaroqliligi,
-      D=Nosozlik belgilari, E=Inventar raqami,
-      F=Tashilot nomi, G={boss name}, H={enginer1}, I={enginer2}
-    """
+    """Универсальный Excel шаблон для акта СПИСАНИЯ."""
     wb = Workbook()
     ws = wb.active
     ws.title = 'Spisaniye'
     ws.sheet_view.showGridLines = False
-    ws.row_dimensions[1].height = 38
 
-    headers = [
-        ('Qurilma nomi\n(Название оборудования)', 28),
-        ('Qismlar nomi\n(Компонент)',              22),
-        ('Foydalanishga yaroqliligi\n(Состояние)', 20),
-        ('Nosozlik belgilari\n(Неисправность)',    26),
-        ('Inventar raqami\n(Инв. номер) *',        18),
-        ('Tashilot nomi\n(Организация)',            32),
-        ('{boss name}\n(Руководитель)',             22),
-        ('{enginer1}\n(Инженер 1)',                 22),
-        ('{enginer2}\n(Инженер 2)',                 22),
+    # Заголовок листа (строка 1)
+    ws.merge_cells('A1:I1')
+    ws['A1'] = 'АКТ СПИСАНИЯ — ШАБЛОН ДАННЫХ'
+    ws['A1'].font      = Font(name='Times New Roman', bold=True, size=13, color='FFFFFF')
+    ws['A1'].fill      = PatternFill('solid', fgColor='2E4057')
+    ws['A1'].alignment = _CENTER
+    ws.row_dimensions[1].height = 26
+
+    # Заголовки колонок (строка 2)
+    cols_s = [
+        ('A', 'Qurilma nomi\n(Оборудование)',          26),
+        ('B', 'Qismlar nomi\n(Компонент)',              20),
+        ('C', 'Holati\n(Yaroqli / Yaroqsiz)',           16),
+        ('D', 'Nosozlik sababi\n(Причина неисправн.)',  26),
+        ('E', 'Inventar raqami\n(Инв. номер)  ★',      18),
+        ('F', 'Tashkilot nomi\n(Организация)',          28),
+        ('G', 'Rahbar\n(Руководитель)',                  22),
+        ('H', 'Muhandis 1\n(Инженер 1)',                22),
+        ('I', 'Muhandis 2\n(Инженер 2)',                22),
     ]
-    for ci, (text, width) in enumerate(headers, start=1):
-        _hdr_cell(ws, 1, ci, text, _HDR_FILL_S, width)
+    for ci, (col, text, width) in enumerate(cols_s, start=1):
+        cell = ws.cell(row=2, column=ci, value=text)
+        cell.font = _HDR_FONT
+        cell.fill = _HDR_FILL_S
+        cell.alignment = _CENTER
+        cell.border = _border()
+        ws.column_dimensions[col].width = width
+    ws.row_dimensions[2].height = 34
 
     # Валидация состояния
     dv = DataValidation(type='list', formula1='"Yaroqli,Yaroqsiz"',
                         allow_blank=True, showDropDown=False)
-    dv.sqref = 'C2:C500'
+    dv.sqref = 'C3:C500'
     ws.add_data_validation(dv)
 
-    # Примеры данных
-    examples = [
-        ('Server HP ML 350',   'Asosiy plata', 'Yaroqli',  "ma'naviy eskirgan", '26-0006039', 'ABM Sirdaryo viloyati MChJ', 'Palonov P.A', 'Raxmatov V.A', 'Xolbekov G.T'),
-        ('Server HP ML 350',   'Tok manbayi',  'Yaroqli',  "ma'naviy eskirgan", '26-0006039', 'ABM Sirdaryo viloyati MChJ', 'Palonov P.A', 'Raxmatov V.A', 'Xolbekov G.T'),
-        ('Server HP ML 350',   'Qattiq disk',  'Yaroqsiz', 'BAD bloklar mavjud','26-0006039', 'ABM Sirdaryo viloyati MChJ', 'Palonov P.A', 'Raxmatov V.A', 'Xolbekov G.T'),
-        ('',)*9,
-        ('Кондиционер ART-12HI','Tok manbai',  'Yaroqsiz', "tok sarfi ko'p",    '24-0006162', 'ABM Sirdaryo viloyati MChJ', 'Palonov P.A', 'Raxmatov V.A', 'Xolbekov G.T'),
-        ('Кондиционер ART-12HI','Kompressor',  'Yaroqsiz', 'shovqin mavjud',    '24-0006162', 'ABM Sirdaryo viloyati MChJ', 'Palonov P.A', 'Raxmatov V.A', 'Xolbekov G.T'),
-        ('Кондиционер ART-12HI','Radiator',    'Yaroqsiz', 'yamalgan',          '24-0006162', 'ABM Sirdaryo viloyati MChJ', 'Palonov P.A', 'Raxmatov V.A', 'Xolbekov G.T'),
-        ('',)*9,
-        ("Монитор LCD 19''",   'Asosiy plata', 'Yaroqsiz', 'korpus singan',     '26-0003436', 'ABM Sirdaryo viloyati MChJ', 'Palonov P.A', 'Raxmatov V.A', 'Xolbekov G.T'),
-        ("Монитор LCD 19''",   'Tok manbayi',  'Yaroqsiz', 'kuygan',            '26-0003436', 'ABM Sirdaryo viloyati MChJ', 'Palonov P.A', 'Raxmatov V.A', 'Xolbekov G.T'),
+    # Примеры данных (данные начинаются с строки 3)
+    ORG = 'ABM Sirdaryo viloyati MChJ'
+    B = 'Palonov P.A'; E1 = 'Raxmatov V.A'; E2 = 'Xolbekov G.T'
+    ex_s = [
+        ('Server HP ML 350',     'Asosiy plata', 'Yaroqli',  "Ma'naviy eskirgan", '26-0006039', ORG, B, E1, E2),
+        ('Server HP ML 350',     'Tok manbayi',  'Yaroqli',  "Ma'naviy eskirgan", '26-0006039', ORG, B, E1, E2),
+        ('Server HP ML 350',     'Qattiq disk',  'Yaroqsiz', 'BAD bloklar mavjud','26-0006039', ORG, B, E1, E2),
+        (None,)*9,
+        ('Konditsioner ART-12HI','Tok manbai',   'Yaroqsiz', "Tok sarfi ko'p",    '24-0006162', ORG, B, E1, E2),
+        ('Konditsioner ART-12HI','Kompressor',   'Yaroqsiz', 'Shovqin mavjud',    '24-0006162', ORG, B, E1, E2),
+        ('Konditsioner ART-12HI','Radiator',     'Yaroqsiz', 'Yamalgan',          '24-0006162', ORG, B, E1, E2),
+        (None,)*9,
+        ("Monitor LCD 19''",     'Asosiy plata', 'Yaroqsiz', 'Korpus singan',     '26-0003436', ORG, B, E1, E2),
+        ("Monitor LCD 19''",     'Tok manbayi',  'Yaroqsiz', 'Kuygan',            '26-0003436', ORG, B, E1, E2),
     ]
 
-    for ri, row_data in enumerate(examples):
-        rn   = ri + 2
-        ws.row_dimensions[rn].height = 18
-        empty = not any(row_data)
+    for ri, row_data in enumerate(ex_s):
+        rn = ri + 3
+        empty = not any(v for v in row_data if v)
         fill  = _EVEN_S if (ri % 2 == 0 and not empty) else _ODD
-        for ci, val in enumerate(row_data, start=1):
-            cell = ws.cell(row=rn, column=ci, value=val or None)
-            cell.font      = _DATA_FONT
-            cell.border    = _border()
-            cell.alignment = _CENTER if ci == 3 else _LEFT
-            if not empty:
-                cell.fill = fill
-                if ci == 3 and val == 'Yaroqsiz':
-                    cell.font = Font(name='Times New Roman', size=10,
-                                     color='C0392B', bold=True)
-
-    # Пустые строки для ввода
-    for ri in range(len(examples), len(examples) + 15):
-        rn = ri + 2
         ws.row_dimensions[rn].height = 18
+        for ci, val in enumerate(row_data, start=1):
+            cell = ws.cell(row=rn, column=ci, value=val)
+            cell.font = _DATA_FONT; cell.fill = fill
+            cell.border = _border(); cell.alignment = _CENTER if ci == 3 else _LEFT
+            if ci == 3 and val == 'Yaroqsiz':
+                cell.font = Font(name='Times New Roman', size=10, color='C0392B', bold=True)
+            if ci == 3 and val == 'Yaroqli':
+                cell.font = Font(name='Times New Roman', size=10, color='1E8B4C', bold=True)
+
+    for ri in range(len(ex_s), len(ex_s) + 20):
+        rn = ri + 3
         fill = _EVEN_S if ri % 2 == 0 else _ODD
+        ws.row_dimensions[rn].height = 18
         for ci in range(1, 10):
             cell = ws.cell(row=rn, column=ci)
-            cell.font   = _DATA_FONT
-            cell.fill   = fill
-            cell.border = _border()
-            cell.alignment = _LEFT
+            cell.font = _DATA_FONT; cell.fill = fill
+            cell.border = _border(); cell.alignment = _LEFT
 
-    # Инструкция
-    ir = len(examples) + 17
+    ir = len(ex_s) + 24
     ws.merge_cells(start_row=ir, start_column=1, end_row=ir, end_column=9)
     ws.cell(row=ir, column=1).value = (
-        '* ИНСТРУКЦИЯ: Каждая строка — один компонент оборудования. '
-        'Группировка в один Word файл идёт по полю "Inventar raqami". '
-        'Пустая строка = визуальный разделитель (необязательно). '
-        'Yaroqli = исправен, Yaroqsiz = неисправен.'
-    )
-    ws.cell(row=ir, column=1).font = Font(name='Times New Roman',
-                                          italic=True, size=9, color='888888')
+        '★ Каждая строка = один компонент оборудования.  '
+        'Группировка в Word-файл по колонке E (Inventar raqami).  '
+        'Пустая строка — разделитель.  Holati: Yaroqli = исправен, Yaroqsiz = неисправен.')
+    ws.cell(row=ir, column=1).font = Font(name='Times New Roman', italic=True, size=9, color='888888')
     ws.cell(row=ir, column=1).alignment = _LEFT
-    ws.row_dimensions[ir].height = 22
-
-    ws.freeze_panes = 'A2'
+    ws.row_dimensions[ir].height = 18
+    ws.freeze_panes = 'A3'
     wb.save(path)
     return path
 
@@ -506,94 +506,88 @@ def create_spisan_template(path: str) -> str:
 #  Структура = shablom_ust.xlsx
 # ══════════════════════════════════════════════
 
+
 def create_ust_template(path: str) -> str:
-    """
-    Создаёт Excel шаблон для данных УСТАНОВКИ.
-    Структура ТОЧНО совпадает с оригинальным shablom_ust.xlsx:
-      A=Data,              B={num_otch},       C=installation date,
-      D={oborud name},     E={serial num},     F={where oborud},
-      G={Organizasiya},    H={adress},         I=(пусто),
-      J={boss name},       K={engine1},        L={job title1},
-      M={engine2},         N={job title2}
-    """
+    """Универсальный Excel шаблон для акта УСТАНОВКИ."""
     wb = Workbook()
     ws = wb.active
     ws.title = 'Ustanovka'
     ws.sheet_view.showGridLines = False
-    ws.row_dimensions[1].height = 38
 
-    # 14 колонок A–N, колонка I пустая (как в оригинале)
-    headers = [
-        ('A', 'Data\n(Дата акта)',               14),
-        ('B', '{num_otch}\n(№)',                   5),
-        ('C', 'installation date\n(Дата уст-ки)', 16),
-        ('D', '{oborud name}\n(Модель/Марка)',     26),
-        ('E', '{serial num}\n(Серийный №)',        18),
-        ('F', '{where oborud}\n(Место установки)', 24),
-        ('G', '{Organizasiya}\n(Организация)',     28),
-        ('H', '{adress}\n(Адрес)',                 22),
-        ('I', '',                                   4),   # пустая — как в оригинале
-        ('J', '{boss name}\n(Руководитель)',       22),
-        ('K', '{engine1}\n(Инженер 1)',            20),
-        ('L', '{job title1}\n(Должность 1)',       18),
-        ('M', '{engine2}\n(Инженер 2)',            20),
-        ('N', '{job title2}\n(Должность 2)',       18),
+    # Заголовок листа (строка 1)
+    ws.merge_cells('A1:N1')
+    ws['A1'] = 'АКТ УСТАНОВКИ — ШАБЛОН ДАННЫХ'
+    ws['A1'].font      = Font(name='Times New Roman', bold=True, size=13, color='FFFFFF')
+    ws['A1'].fill      = PatternFill('solid', fgColor='1A5276')
+    ws['A1'].alignment = _CENTER
+    ws.row_dimensions[1].height = 26
+
+    # Заголовки колонок (строка 2)
+    cols_u = [
+        ('A', 'Sana (akt)\n(Дата акта)',             14),
+        ('B', '№',                                     4),
+        ('C', "O'rnatish sanasi\n(Вр. установки)",   16),
+        ('D', 'Uskuna nomi\n(Оборудование / Модель)', 26),
+        ('E', 'Seriya raqami\n(Серийный номер)',       18),
+        ('F', "O'rnatish joyi\n(Место установки)",    24),
+        ('G', 'Tashkilot nomi\n(Организация)',         28),
+        ('H', 'Manzil\n(Адрес)',                       22),
+        ('I', '',                                       4),
+        ('J', 'Rahbar\n(Руководитель)',                22),
+        ('K', 'Muhandis 1\n(Инженер 1)',               20),
+        ('L', "Muhandis 1\nlavozimi (Должность)",      18),
+        ('M', 'Muhandis 2\n(Инженер 2)',               20),
+        ('N', "Muhandis 2\nlavozimi (Должность)",      18),
     ]
+    for ci, (col, text, width) in enumerate(cols_u, start=1):
+        ws.column_dimensions[col].width = width
+        if text:
+            cell = ws.cell(row=2, column=ci, value=text)
+            cell.font = _HDR_FONT; cell.fill = _HDR_FILL_U
+            cell.alignment = _CENTER; cell.border = _border('1A5276')
+    ws.row_dimensions[2].height = 34
 
-    for ci, (col_letter, text, width) in enumerate(headers, start=1):
-        ws.column_dimensions[col_letter].width = width
-        if text:  # пустую колонку I не красим
-            cell = ws.cell(row=1, column=ci, value=text)
-            cell.font      = _HDR_FONT
-            cell.fill      = _HDR_FILL_U
-            cell.alignment = _CENTER
-            cell.border    = _border('1A5276')
-        ws.row_dimensions[1].height = 38
-
+    # Примеры данных (с строки 3)
     today = datetime.now().strftime('%d.%m.%Y')
-    # 13 значений: A B C D E F G H I(пусто) J K L M N
-    examples = [
-        (today, '1', today, 'Maipu MP1900X-22',   'SN-001', 'Guliston, 1-bino', 'ABM Sirdaryo viloyati MChJ', "Guliston sh., O'zbekiston k.", '', 'Palonov P.A', 'Raxmatov V.A', 'Yetakchi muhandis', 'Xolbekov G.T', 'Yetakchi muhandis'),
-        (today, '2', today, 'Maipu MP1900X-22',   'SN-002', 'Guliston, 2-bino', 'ABM Sirdaryo viloyati MChJ', "Guliston sh., O'zbekiston k.", '', 'Palonov P.A', 'Raxmatov V.A', 'Yetakchi muhandis', 'Xolbekov G.T', 'Yetakchi muhandis'),
-        (today, '3', today, 'Switch Cisco SG350', 'SN-003', 'Guliston, 3-bino', 'ABM Sirdaryo viloyati MChJ', "Guliston sh., O'zbekiston k.", '', 'Palonov P.A', 'Raxmatov V.A', 'Yetakchi muhandis', 'Xolbekov G.T', 'Yetakchi muhandis'),
+    ORG = 'ABM Sirdaryo viloyati MChJ'
+    ADDR = "Guliston sh., O'zbekiston ko'ch."
+    B = 'Palonov P.A'; E1 = 'Raxmatov V.A'; L1 = 'Yetakchi muhandis'
+    E2 = 'Xolbekov G.T'; L2 = 'Yetakchi muhandis'
+    ex_u = [
+        (today,'1',today,'Maipu MP1900X-22',  'SN-001','Guliston, 1-bino',ORG,ADDR,'',B,E1,L1,E2,L2),
+        (today,'2',today,'Maipu MP1900X-22',  'SN-002','Guliston, 2-bino',ORG,ADDR,'',B,E1,L1,E2,L2),
+        (today,'3',today,'Switch Cisco SG350','SN-003','Guliston, 3-bino',ORG,ADDR,'',B,E1,L1,E2,L2),
+        (today,'4',today,'UPS APC 1500VA',    'SN-004','Server xona',     ORG,ADDR,'',B,E1,L1,E2,L2),
     ]
 
-    for ri, row_data in enumerate(examples):
-        rn   = ri + 2
-        ws.row_dimensions[rn].height = 20
+    for ri, row_data in enumerate(ex_u):
+        rn = ri + 3
         fill = _EVEN_U if ri % 2 == 0 else _ODD
+        ws.row_dimensions[rn].height = 20
         for ci, val in enumerate(row_data, start=1):
             cell = ws.cell(row=rn, column=ci, value=val if val else None)
-            cell.font      = _DATA_FONT
-            cell.fill      = fill
-            cell.border    = _border('1A5276')
-            cell.alignment = _CENTER if ci in (1, 2, 3) else _LEFT
+            cell.font = _DATA_FONT; cell.fill = fill
+            cell.border = _border('1A5276')
+            cell.alignment = _CENTER if ci in (1,2,3,9) else _LEFT
 
-    # Пустые строки для ввода
-    for ri in range(len(examples), len(examples) + 15):
-        rn = ri + 2
-        ws.row_dimensions[rn].height = 20
+    for ri in range(len(ex_u), len(ex_u) + 20):
+        rn = ri + 3
         fill = _EVEN_U if ri % 2 == 0 else _ODD
+        ws.row_dimensions[rn].height = 20
         for ci in range(1, 15):
             cell = ws.cell(row=rn, column=ci)
-            cell.font   = _DATA_FONT
-            cell.fill   = fill
-            cell.border = _border('1A5276')
-            cell.alignment = _LEFT
+            cell.font = _DATA_FONT; cell.fill = fill
+            cell.border = _border('1A5276'); cell.alignment = _LEFT
 
-    ir = len(examples) + 17
+    ir = len(ex_u) + 24
     ws.merge_cells(start_row=ir, start_column=1, end_row=ir, end_column=14)
     ws.cell(row=ir, column=1).value = (
-        'ИНСТРУКЦИЯ: A=Дата акта, C=Дата установки (дд.мм.гггг), '
-        'D=Модель оборудования, E=Серийный номер, F=Место установки, '
-        'G=Организация, H=Адрес, J=Руководитель, K=Инженер 1, M=Инженер 2. '
-        'Колонка I оставьте пустой.'
-    )
-    ws.cell(row=ir, column=1).font = Font(name='Times New Roman',
-                                          italic=True, size=9, color='888888')
+        'A=Дата акта,  C=Вр. установки (дд.мм.гггг),  D=Модель,  '
+        'E=Серийный №,  F=Место установки,  G=Организация,  H=Адрес,  '
+        'J=Руководитель,  K/M=Инженеры,  L/N=Должности.  Колонку I не заполнять!')
+    ws.cell(row=ir, column=1).font = Font(name='Times New Roman', italic=True, size=9, color='888888')
     ws.cell(row=ir, column=1).alignment = _LEFT
-    ws.row_dimensions[ir].height = 22
-
-    ws.freeze_panes = 'A2'
+    ws.row_dimensions[ir].height = 18
+    ws.freeze_panes = 'A3'
     wb.save(path)
     return path
