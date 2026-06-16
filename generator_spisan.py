@@ -172,23 +172,71 @@ def create_spisan_doc(group: dict, doc_number: str = '1',
     style.font.size = Pt(12)
 
     # ══════════════════════════════════
-    #  ШАПКА — TASDIQLAYMAN / ТАСДИҚЛАНДИ
+    #  ШАПКА — таблица: пустая левая | текст справа
     # ══════════════════════════════════
-    p_hdr = doc.add_paragraph()
-    p_hdr.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    p_hdr.paragraph_format.space_before = Pt(0)
-    p_hdr.paragraph_format.space_after  = Pt(0)
+    hdr_tbl = doc.add_table(rows=1, cols=2)
+    hdr_tbl.alignment = WD_TABLE_ALIGNMENT.RIGHT
+    for cell in hdr_tbl.rows[0].cells:
+        tc = cell._tc
+        tcPr = tc.get_or_add_tcPr()
+        tcBorders = OxmlElement('w:tcBorders')
+        for edge in ('top','left','bottom','right'):
+            b = OxmlElement(f'w:{edge}')
+            b.set(qn('w:val'), 'none')
+            b.set(qn('w:sz'), '0')
+            b.set(qn('w:space'), '0')
+            b.set(qn('w:color'), 'auto')
+            tcBorders.append(b)
+        tcPr.append(tcBorders)
 
-    def rr(p, text, bold=False, size=11):
+    hdr_tbl.rows[0].cells[0].width = Cm(5)
+    hdr_tbl.rows[0].cells[1].width = Cm(12)
+    right_cell = hdr_tbl.rows[0].cells[1]
+
+    # Удаляем пустой параграф по умолчанию
+    for p in right_cell.paragraphs:
+        p._element.getparent().remove(p._element)
+
+    def hdr_p(text, bold=False, size=11):
+        p = right_cell.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after  = Pt(1)
+        p.paragraph_format.line_spacing = Pt(14)
         r = p.add_run(text)
         r.bold = bold
         r.font.size = Pt(size)
         r.font.name = 'Times New Roman'
+        return p
 
-    rr(p_hdr, f'{T["tasdiq"]}\n',             bold=True, size=11)
-    rr(p_hdr, f'{org_name}\n',                size=10)
-    rr(p_hdr, f'__________ {boss}\n',         size=10)
-    rr(p_hdr, f'«{day}» {month} {year} {T["yil"]}', size=10)
+    # «TASDIQLAYMAN»
+    hdr_p(T['tasdiq'], bold=True, size=11)
+
+    # Организация + должность — разбиваем на 2 строки если длинно
+    org_rahbar = f'{org_name} {T["rahbar"]}'
+    if len(org_rahbar) > 45:
+        words = org_rahbar.split()
+        mid   = len(words) // 2
+        hdr_p(' '.join(words[:mid]), size=10)
+        hdr_p(' '.join(words[mid:]), size=10)
+    else:
+        hdr_p(org_rahbar, size=10)
+
+    # Линия подписи + ФИО
+    sign_p = right_cell.add_paragraph()
+    sign_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    sign_p.paragraph_format.space_before = Pt(2)
+    sign_p.paragraph_format.space_after  = Pt(1)
+    sign_p.paragraph_format.line_spacing = Pt(14)
+    r_line = sign_p.add_run('________________  ')
+    r_line.font.size = Pt(10)
+    r_line.font.name = 'Times New Roman'
+    r_boss = sign_p.add_run(boss)
+    r_boss.font.size = Pt(10)
+    r_boss.font.name = 'Times New Roman'
+
+    # Дата
+    hdr_p(f'«{day}» {month} {year} {T["yil"]}', size=10)
 
     doc.add_paragraph().paragraph_format.space_after = Pt(2)
     _hr(doc)
