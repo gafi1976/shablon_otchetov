@@ -90,6 +90,9 @@ def _make_sheet(ws, title_text, title_color, headers_widths, hdr_fill):
         cell.border    = _border()
 
     # Строки 3–52 — пустые для ввода данных (50 строк)
+    # Для Spisaniye: числовые колонки E(5), H(8), J-O(10-15), P-T(16-20)
+    # Для Ustanovka: колонка H(8)
+    center_cols = {5, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
     for ri in range(3, 53):
         ws.row_dimensions[ri].height = 20
         fill = _FILL_ES if ri % 2 == 0 else _FILL_ODD
@@ -98,7 +101,7 @@ def _make_sheet(ws, title_text, title_color, headers_widths, hdr_fill):
             cell.font      = _FONT_DATA
             cell.fill      = fill
             cell.border    = _border()
-            cell.alignment = _ALIGN_C if ci in (5, 8) else _ALIGN_L
+            cell.alignment = _ALIGN_C if ci in center_cols else _ALIGN_L
 
     ws.freeze_panes = 'A3'
 
@@ -109,23 +112,77 @@ def _make_sheet(ws, title_text, title_color, headers_widths, hdr_fill):
 
 SHABLON_NAME = 'shablon.xlsx'
 
-# Заголовки листа Spisaniye (15 колонок)
+# ════════════════════════════════════════════════════════════════
+#  ШАБЛОН СПИСАНИЯ — структура колонок (строка 1=title, строка 2=заголовки)
+# ════════════════════════════════════════════════════════════════
+#  A  Tashkilot        — Название организации
+#  B  Direktor         — Директор организации (ФИО)
+#  C  Boshliq          — Начальник отдела (ФИО)
+#  D  Buyruq           — Номер приказа комиссии
+#  E  Inventar         — Инвентарный номер  (ключ группировки)
+#  F  Qurilma          — Название оборудования
+#  G  Qism             — Компонент
+#  H  Holat            — Состояние (Yaroqli / Yaroqsiz)
+#  I  Sabab            — Причина / неисправность
+#  J  Narxi            — Стоимость (сўм)
+#  K  Amort            — Амортизация чегирмалари (сўм)
+#  L  Norma            — Норма амортизации (%)
+#  M  Qoldiq           — Қолдиқ нархи (сўм)
+#  N  Debet            — Дебет счёт (напр. 9210)
+#  O  Kredit           — Кредит счёт (напр. 0150)
+#  P  Ish_chiq_yil     — Год производства (изготовления)
+#  Q  Kelgan_yil       — Год прихода (поступления)
+#  R  Ishga_yil        — Год ввода в эксплуатацию
+#  S  Tamir_soni       — Количество ремонтов
+#  T  Tamir_summa      — Сумма затрат на ремонты (сўм)
+#  U  Bulim            — Подразделение / отдел
+#  V  Azо1_fio         — Член комиссии 1: ФИО
+#  W  Azо1_lavozim     — Член комиссии 1: должность
+#  X  Azо2_fio         — Член комиссии 2: ФИО
+#  Y  Azо2_lavozim     — Член комиссии 2: должность
+#  Z  Azо3_fio         — Член комиссии 3: ФИО
+#  AA Azо3_lavozim     — Член комиссии 3: должность
+#  AB Azо4_fio         — Член комиссии 4: ФИО
+#  AC Azо4_lavozim     — Член комиссии 4: должность
+#  AD Azо5_fio         — Член комиссии 5: ФИО
+#  AE Azо5_lavozim     — Член комиссии 5: должность
+
 HEADERS_S = [
-    ('Tashkilot\n(Организация)',             28),
-    ('Rahbar\n(Руководитель)',               22),
-    ('Muhandis1\n(Инженер 1)',               22),
-    ('Muhandis2\n(Инженер 2)',               22),
-    ('Inventar\n(Инв. номер)',               16),
-    ('Qurilma\n(Оборудование)',              26),
-    ('Qism\n(Компонент)',                    22),
-    ('Holat\n(Yaroqli / Yaroqsiz)',          16),
-    ('Sabab\n(Причина / неисправность)',     28),
-    ('Narxi\n(Нарxi, сўм)',                  16),
-    ('Amort\n(Амортизация, сўм)',            18),
-    ('Norma\n(Норма, %)',                    12),
-    ('Qoldiq\n(Қолдиқ нарxi)',              16),
-    ('Debet\n(Дебет счёт)',                  14),
-    ('Kredit\n(Кредит счёт)',                14),
+    # Основные
+    ('Tashkilot\n(Организация)',                  28),  # A
+    ('Direktor\n(Директор организации)',          24),  # B
+    ('Boshliq\n(Начальник отдела)',               24),  # C
+    ('Buyruq raqami\n(Номер приказа)',             18),  # D
+    ('Inventar ★\n(Инв. номер)',                  16),  # E
+    ('Qurilma\n(Оборудование)',                   26),  # F
+    ('Qism\n(Компонент)',                          22),  # G
+    ('Holat\n(Yaroqli / Yaroqsiz)',               16),  # H
+    ('Sabab\n(Причина)',                           24),  # I
+    # Финансовые
+    ('Narxi\n(Стоимость, сўм)',                   16),  # J
+    ('Amort\n(Амортизация, сўм)',                 18),  # K
+    ('Norma\n(Норма, %)',                          12),  # L
+    ('Qoldiq\n(Қолдиқ, сўм)',                    16),  # M
+    ('Debet\n(Дебет счёт)',                        14),  # N
+    ('Kredit\n(Кредит счёт)',                      14),  # O
+    # История
+    ("Ishlab chiqarilgan yil\n(Год производства)", 18), # P
+    ("Kelgan yil\n(Год прихода)",                  14), # Q
+    ("Ishga tushirilgan yil\n(Год ввода)",         14), # R
+    ("Ta'mirlash soni\n(Кол-во ремонтов)",        14), # S
+    ("Ta'mirlash summasi\n(Сумма ремонтов, сўм)", 18), # T
+    ("Bo'lim\n(Подразделение)",                   22), # U
+    # Члены комиссии (динамически — до 5 пар ФИО + должность)
+    ('Azо 1 FIO\n(Чл.ком. 1 ФИО)',               22),  # V
+    ('Azо 1 lavozim\n(Чл.ком. 1 должность)',      20),  # W
+    ('Azо 2 FIO\n(Чл.ком. 2 ФИО)',               22),  # X
+    ('Azо 2 lavozim\n(Чл.ком. 2 должность)',      20),  # Y
+    ('Azо 3 FIO\n(Чл.ком. 3 ФИО)',               22),  # Z
+    ('Azо 3 lavozim\n(Чл.ком. 3 должность)',      20),  # AA
+    ('Azо 4 FIO\n(Чл.ком. 4 ФИО)',               22),  # AB
+    ('Azо 4 lavozim\n(Чл.ком. 4 должность)',      20),  # AC
+    ('Azо 5 FIO\n(Чл.ком. 5 ФИО)',               22),  # AD
+    ('Azо 5 lavozim\n(Чл.ком. 5 должность)',      20),  # AE
 ]
 
 # Заголовки листа Ustanovka (11 колонок)
@@ -398,9 +455,14 @@ def read_spisan_excel(path: str) -> list:
 def _parse_spisan_new(data_rows: list) -> list:
     """
     Парсит данные нового формата (shablon.xlsx, лист Spisaniye):
-    A=Tashkilot, B=Rahbar, C=Muhandis1, D=Muhandis2,
-    E=Inventar, F=Qurilma, G=Qism, H=Holat, I=Sabab,
-    J=Narxi, K=Amort, L=Norma, M=Qoldiq, N=Debet, O=Kredit
+    A=Tashkilot, B=Direktor, C=Boshliq, D=Buyruq, E=Inventar★,
+    F=Qurilma, G=Qism, H=Holat, I=Sabab,
+    J=Narxi, K=Amort, L=Norma, M=Qoldiq, N=Debet, O=Kredit,
+    P=Ish_chiq_yil, Q=Kelgan_yil, R=Ishga_yil,
+    S=Tamir_soni, T=Tamir_summa, U=Bulim,
+    V=Azo1_fio, W=Azo1_lavozim, X=Azo2_fio, Y=Azo2_lavozim,
+    Z=Azo3_fio, AA=Azo3_lavozim, AB=Azo4_fio, AC=Azo4_lavozim,
+    AD=Azo5_fio, AE=Azo5_lavozim
     """
     inv_data  = {}
     inv_order = []
@@ -408,57 +470,82 @@ def _parse_spisan_new(data_rows: list) -> list:
     for row in data_rows:
         if not row or not any(row):
             continue
-        tashkilot = _g(row,  0)
-        rahbar    = _g(row,  1)
-        muh1      = _g(row,  2)
-        muh2      = _g(row,  3)
-        inventar  = _g(row,  4)
-        qurilma   = _g(row,  5)
-        qism      = _g(row,  6)
-        holat     = _g(row,  7)
-        sabab     = _g(row,  8)
-        narxi     = _g(row,  9)
-        amort     = _g(row, 10)
-        norma     = _g(row, 11)
-        qoldiq    = _g(row, 12)
-        debet     = _g(row, 13)
-        kredit    = _g(row, 14)
+
+        tashkilot   = _g(row,  0)   # A
+        direktor    = _g(row,  1)   # B
+        boshliq     = _g(row,  2)   # C
+        buyruq      = _g(row,  3)   # D
+        inventar    = _g(row,  4)   # E  ← ключ
+        qurilma     = _g(row,  5)   # F
+        qism        = _g(row,  6)   # G
+        holat       = _g(row,  7)   # H
+        sabab       = _g(row,  8)   # I
+        narxi       = _g(row,  9)   # J
+        amort       = _g(row, 10)   # K
+        norma       = _g(row, 11)   # L
+        qoldiq      = _g(row, 12)   # M
+        debet       = _g(row, 13)   # N
+        kredit      = _g(row, 14)   # O
+        ish_chiq    = _g(row, 15)   # P
+        kelgan      = _g(row, 16)   # Q
+        ishga       = _g(row, 17)   # R
+        tamir_soni  = _g(row, 18)   # S
+        tamir_summa = _g(row, 19)   # T
+        bulim       = _g(row, 20)   # U
+
+        # Члены комиссии — динамически (до 5 пар)
+        azolar = []
+        for i in range(5):
+            fio     = _g(row, 21 + i*2)     # V, X, Z, AB, AD
+            lavozim = _g(row, 21 + i*2 + 1) # W, Y, AA, AC, AE
+            if fio:
+                azolar.append({'fio': fio, 'lavozim': lavozim})
 
         if not inventar:
             continue
 
         if inventar not in inv_data:
             inv_data[inventar] = {
-                'inv_number':      inventar,
-                'org_name':        tashkilot,
-                'region':          '',
-                'doc_date':        datetime.now().strftime('%d.%m.%Y'),
-                'commission_head': rahbar,
-                'member1':         muh1,
-                'member2':         muh2,
-                'narxi':           narxi,
-                'amort':           amort,
-                'norma':           norma,
-                'qoldiq':          qoldiq,
-                'debet':           debet or '9210',
-                'kredit':          kredit or '0150',
-                'devices':         {},
-                'dev_order':       [],
+                'inv_number':   inventar,
+                'org_name':     tashkilot,
+                'direktor':     direktor,
+                'boshliq':      boshliq,
+                'buyruq':       buyruq,
+                'region':       '',
+                'doc_date':     datetime.now().strftime('%d.%m.%Y'),
+                'narxi':        narxi,
+                'amort':        amort,
+                'norma':        norma,
+                'qoldiq':       qoldiq,
+                'debet':        debet or '9210',
+                'kredit':       kredit or '0150',
+                'ish_chiq_yil': ish_chiq,
+                'kelgan_yil':   kelgan,
+                'ishga_yil':    ishga,
+                'tamir_soni':   tamir_soni,
+                'tamir_summa':  tamir_summa,
+                'bulim':        bulim,
+                'azolar':       azolar,
+                'devices':      {},
+                'dev_order':    [],
             }
             inv_order.append(inventar)
 
         g = inv_data[inventar]
-        if not g['org_name']        and tashkilot: g['org_name']        = tashkilot
-        if not g['commission_head'] and rahbar:    g['commission_head'] = rahbar
-        if not g['member1']         and muh1:      g['member1']         = muh1
-        if not g['member2']         and muh2:      g['member2']         = muh2
-        # Обновляем финансовые поля если они заполнены
-        if not g['narxi']  and narxi:  g['narxi']  = narxi
-        if not g['amort']  and amort:  g['amort']  = amort
-        if not g['norma']  and norma:  g['norma']  = norma
-        if not g['qoldiq'] and qoldiq: g['qoldiq'] = qoldiq
-        if not g['debet']  and debet:  g['debet']  = debet
-        if not g['kredit'] and kredit: g['kredit'] = kredit
+        # Обновляем если пустые
+        for key, val in [
+            ('org_name', tashkilot), ('direktor', direktor),
+            ('boshliq', boshliq),    ('buyruq', buyruq),
+            ('narxi', narxi),        ('amort', amort),
+            ('norma', norma),        ('qoldiq', qoldiq),
+            ('ish_chiq_yil', ish_chiq), ('kelgan_yil', kelgan),
+            ('ishga_yil', ishga),    ('tamir_soni', tamir_soni),
+            ('tamir_summa', tamir_summa), ('bulim', bulim),
+        ]:
+            if not g[key] and val:
+                g[key] = val
+        if not g['azolar'] and azolar:
+            g['azolar'] = azolar
 
         if qurilma:
             if qurilma not in g['devices']:
@@ -504,14 +591,35 @@ def _parse_spisan_old(data_rows: list) -> list:
             inv_data[inventar] = {
                 'inv_number':      inventar,
                 'org_name':        tashkilot,
+                'direktor':        '',
+                'boshliq':         rahbar,
+                'buyruq':          '',
                 'region':          '',
                 'doc_date':        datetime.now().strftime('%d.%m.%Y'),
+                'narxi':           '',
+                'amort':           '0.00',
+                'norma':           '',
+                'qoldiq':          '0.00',
+                'debet':           '9210',
+                'kredit':          '0150',
+                'ish_chiq_yil':    '',
+                'kelgan_yil':      '',
+                'ishga_yil':       '',
+                'tamir_soni':      '',
+                'tamir_summa':     '',
+                'bulim':           '',
+                'azolar':          [
+                    {'fio': muh1, 'lavozim': ''} if muh1 else None,
+                    {'fio': muh2, 'lavozim': ''} if muh2 else None,
+                ],
                 'commission_head': rahbar,
                 'member1':         muh1,
                 'member2':         muh2,
                 'devices':         {},
                 'dev_order':       [],
             }
+            # Убираем None из azolar
+            inv_data[inventar]['azolar'] = [a for a in inv_data[inventar]['azolar'] if a]
             inv_order.append(inventar)
 
         g = inv_data[inventar]
@@ -539,19 +647,33 @@ def _build_groups(inv_data: dict, inv_order: list) -> list:
     for inv in inv_order:
         g = inv_data[inv]
         result.append({
-            'inv_number':      g['inv_number'],
-            'org_name':        g['org_name'],
-            'region':          '',
-            'doc_date':        g['doc_date'],
-            'commission_head': g['commission_head'],
-            'member1':         g['member1'],
-            'member2':         g['member2'],
-            'narxi':           g.get('narxi', ''),
-            'amort':           g.get('amort', '0.00'),
-            'norma':           g.get('norma', ''),
-            'qoldiq':          g.get('qoldiq', '0.00'),
-            'debet':           g.get('debet', '9210'),
-            'kredit':          g.get('kredit', '0150'),
+            'inv_number':   g['inv_number'],
+            'org_name':     g.get('org_name', ''),
+            'direktor':     g.get('direktor', ''),
+            'boshliq':      g.get('boshliq', ''),
+            'buyruq':       g.get('buyruq', ''),
+            'region':       '',
+            'doc_date':     g.get('doc_date', datetime.now().strftime('%d.%m.%Y')),
+            # финансовые
+            'narxi':        g.get('narxi', ''),
+            'amort':        g.get('amort', '0.00'),
+            'norma':        g.get('norma', ''),
+            'qoldiq':       g.get('qoldiq', '0.00'),
+            'debet':        g.get('debet', '9210'),
+            'kredit':       g.get('kredit', '0150'),
+            # история
+            'ish_chiq_yil': g.get('ish_chiq_yil', ''),
+            'kelgan_yil':   g.get('kelgan_yil', ''),
+            'ishga_yil':    g.get('ishga_yil', ''),
+            'tamir_soni':   g.get('tamir_soni', ''),
+            'tamir_summa':  g.get('tamir_summa', ''),
+            'bulim':        g.get('bulim', ''),
+            # члены комиссии — список {'fio': str, 'lavozim': str}
+            'azolar':       g.get('azolar', []),
+            # обратная совместимость
+            'commission_head': g.get('boshliq', ''),
+            'member1':         g['azolar'][0]['fio'] if g.get('azolar') else '',
+            'member2':         g['azolar'][1]['fio'] if len(g.get('azolar', [])) > 1 else '',
             'devices': [
                 {'name': dn, 'parts': g['devices'][dn]}
                 for dn in g['dev_order']
