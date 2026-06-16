@@ -654,26 +654,32 @@ class SpisanTab(tk.Frame):
 
     def _create_template(self):
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        path = filedialog.asksaveasfilename(
-            title='Сохранить шаблон Excel для СПИСАНИЯ',
-            defaultextension='.xlsx',
-            filetypes=[('Excel файлы', '*.xlsx')],
-            initialdir=base_dir,
-            initialfile='shablon_spisan.xlsx')
-        if not path:
-            return
+        out_path = os.path.join(base_dir, 'shablon.xlsx')
         try:
-            excel_handler.create_spisan_template(path)
-            self._log_msg(f'✅ Шаблон Excel создан: {path}')
-            self._status.set(f'Шаблон сохранён: {os.path.basename(path)}')
-            messagebox.showinfo('Успех', f'Шаблон Excel создан:\n{path}')
+            excel_handler.create_template(out_path)
+            self._log_msg(f'✅ Шаблон создан: {out_path}')
+            self._status.set('Шаблон shablon.xlsx создан')
+            import subprocess, platform
+            msg = (f'Шаблон создан:\n{out_path}\n\n'
+                   'Откройте файл, перейдите на лист "Spisaniye",\n'
+                   'заполните данные начиная с строки 3,\n'
+                   'затем загрузите через "📥 Загрузить из Excel".')
+            messagebox.showinfo('Шаблон создан', msg)
+            try:
+                if platform.system() == 'Windows': os.startfile(base_dir)
+                elif platform.system() == 'Darwin': subprocess.Popen(['open', base_dir])
+                else: subprocess.Popen(['xdg-open', base_dir])
+            except Exception:
+                pass
         except Exception as e:
             self._log_msg(f'❌ Ошибка: {e}')
             messagebox.showerror('Ошибка', str(e))
 
     def _load_excel(self):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         path = filedialog.askopenfilename(
-            title='Открыть Excel шаблон списания (shablon_spisan.xlsx)',
+            title='Открыть shablon.xlsx — лист "Spisaniye"',
+            initialdir=base_dir,
             filetypes=[('Excel файлы', '*.xlsx *.xls')])
         if not path:
             return
@@ -919,26 +925,32 @@ class UstTab(tk.Frame):
 
     def _create_template(self):
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        path = filedialog.asksaveasfilename(
-            title='Сохранить шаблон Excel для УСТАНОВКИ',
-            defaultextension='.xlsx',
-            filetypes=[('Excel файлы', '*.xlsx')],
-            initialdir=base_dir,
-            initialfile='shablom_ust.xlsx')
-        if not path:
-            return
+        out_path = os.path.join(base_dir, 'shablon.xlsx')
         try:
-            excel_handler.create_ust_template(path)
-            self._log_msg(f'✅ Шаблон Excel создан: {path}')
-            self._status.set(f'Шаблон сохранён: {os.path.basename(path)}')
-            messagebox.showinfo('Успех', f'Шаблон Excel создан:\n{path}')
+            excel_handler.create_template(out_path)
+            self._log_msg(f'✅ Шаблон создан: {out_path}')
+            self._status.set('Шаблон shablon.xlsx создан')
+            import subprocess, platform
+            msg = (f'Шаблон создан:\n{out_path}\n\n'
+                   'Откройте файл, перейдите на лист "Ustanovka",\n'
+                   'заполните данные начиная с строки 3,\n'
+                   'затем загрузите через "📥 Загрузить из Excel".')
+            messagebox.showinfo('Шаблон создан', msg)
+            try:
+                if platform.system() == 'Windows': os.startfile(base_dir)
+                elif platform.system() == 'Darwin': subprocess.Popen(['open', base_dir])
+                else: subprocess.Popen(['xdg-open', base_dir])
+            except Exception:
+                pass
         except Exception as e:
             self._log_msg(f'❌ Ошибка: {e}')
             messagebox.showerror('Ошибка', str(e))
 
     def _load_excel(self):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         path = filedialog.askopenfilename(
-            title='Открыть Excel шаблон установки (shablom_ust.xlsx)',
+            title='Открыть shablon.xlsx — лист "Ustanovka"',
+            initialdir=base_dir,
             filetypes=[('Excel файлы', '*.xlsx *.xls')])
         if not path:
             return
@@ -1144,8 +1156,10 @@ class BatchTab(tk.Frame):
         self._log.config(state='disabled')
 
     def _add_files(self):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         paths = filedialog.askopenfilenames(
-            title='Выберите Excel файлы',
+            title='Выберите shablon.xlsx файлы',
+            initialdir=base_dir,
             filetypes=[('Excel файлы', '*.xlsx *.xls')])
         for p in paths:
             if p not in self._files:
@@ -1317,56 +1331,34 @@ class App(tk.Tk):
 
 def ensure_templates():
     """
-    Проверяет наличие Excel шаблонов рядом с app.py.
-    Если файл не найден — автоматически создаёт его.
-    Вызывается при каждом запуске приложения.
+    Проверяет наличие shablon.xlsx рядом с app.py.
+    Если файл не найден — создаёт автоматически.
     """
-    base_dir = os.path.dirname(os.path.abspath(__file__))
+    base_dir  = os.path.dirname(os.path.abspath(__file__))
+    out_path  = os.path.join(base_dir, 'shablon.xlsx')
 
-    templates = [
-        (
-            os.path.join(base_dir, 'shablon_spisan.xlsx'),
-            excel_handler.create_spisan_template,
-            'shablon_spisan.xlsx  (АКТ СПИСАНИЯ)',
-        ),
-        (
-            os.path.join(base_dir, 'shablom_ust.xlsx'),
-            excel_handler.create_ust_template,
-            'shablom_ust.xlsx  (АКТ УСТАНОВКИ)',
-        ),
-    ]
-
-    restored = []
-    for path, creator, name in templates:
-        if not os.path.exists(path):
-            try:
-                creator(path)
-                restored.append(name)
-                print(f'[AUTO] Создан шаблон: {name}')
-            except Exception as e:
-                print(f'[AUTO] Ошибка создания {name}: {e}')
-
-    if restored:
-        import subprocess, platform
-        msg = (
-            'Шаблоны Excel созданы автоматически:\n\n'
-            + '\n'.join(f'  ✅  {n}' for n in restored)
-            + f'\n\nПапка:\n{base_dir}\n\n'
-            'Откройте файл, заполните данные и загрузите через кнопку\n'
-            '"📥 Загрузить из Excel".'
-        )
-        messagebox.showinfo('Шаблоны созданы', msg)
-
-        # Открываем папку в проводнике
+    if not os.path.exists(out_path):
         try:
-            if platform.system() == 'Windows':
-                os.startfile(base_dir)
-            elif platform.system() == 'Darwin':
-                subprocess.Popen(['open', base_dir])
-            else:
-                subprocess.Popen(['xdg-open', base_dir])
-        except Exception:
-            pass
+            excel_handler.create_template(out_path)
+            print(f'[AUTO] Создан шаблон: {out_path}')
+            import subprocess, platform
+            messagebox.showinfo(
+                'Шаблон создан автоматически',
+                f'Файл shablon.xlsx создан:\n{out_path}\n\n'
+                'Содержит два листа:\n'
+                '  📋  Spisaniye  — данные для акта СПИСАНИЯ\n'
+                '  🔧  Ustanovka  — данные для акта УСТАНОВКИ\n\n'
+                'Заполните нужный лист начиная с строки 3\n'
+                'и загрузите через кнопку "📥 Загрузить из Excel".'
+            )
+            try:
+                if platform.system() == 'Windows':   os.startfile(base_dir)
+                elif platform.system() == 'Darwin':  subprocess.Popen(['open', base_dir])
+                else:                                 subprocess.Popen(['xdg-open', base_dir])
+            except Exception:
+                pass
+        except Exception as e:
+            print(f'[AUTO] Ошибка создания шаблона: {e}')
 
 
 if __name__ == '__main__':
